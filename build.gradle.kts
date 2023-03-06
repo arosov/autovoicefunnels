@@ -58,5 +58,4 @@ tasks.withType<KotlinCompile> {
 
 buildConfig {
     buildConfigField("String", "DISCORD_TOKEN", "\"${project.properties["discord.bot.token"]}\"")
-    buildConfigField("String", "GUILD_ID", "\"${project.properties["discord.bot.guildId"]}\"")
 }
