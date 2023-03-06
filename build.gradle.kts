@@ -26,6 +26,7 @@ dependencies {
     implementation("ch.qos.logback:logback-classic:1.4.5")
     implementation("dev.kord:kord-core:0.8.0-M17")
     implementation("com.kotlindiscord.kord.extensions:kord-extensions:1.5.2-RC1")
+    implementation(kotlin("reflect"))
 
     testImplementation(kotlin("test"))
 }

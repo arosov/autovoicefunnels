@@ -1,9 +1,6 @@
 import dev.kord.common.entity.*
 import dev.kord.core.Kord
-import dev.kord.core.behavior.GuildBehavior
-import dev.kord.core.behavior.createCategory
-import dev.kord.core.behavior.createVoiceChannel
-import dev.kord.core.behavior.edit
+import dev.kord.core.behavior.*
 import dev.kord.core.entity.Guild
 import dev.kord.core.entity.channel.TopGuildChannel
 import dev.kord.core.entity.channel.VoiceChannel
@@ -17,14 +14,37 @@ import mu.KotlinLogging
 
 private val logger = KotlinLogging.logger { }
 
+sealed class MMR(val mmrKey: String, val position: Int) {
+    object STAR : MMR("*", 1)
+    object THREE : MMR("3-4", 2)
+    object FOUR : MMR("4-5",3)
+    object FIVE : MMR("5-6",4)
+    object USER : MMR("usr",5)
+}
+
+sealed class GameType(val maxHunters: Int, val name: String) {
+    object Duo : GameType(2, "DUO")
+    object Trio : GameType(3, "TRIO")
+}
+
+data class EntryCategory(val name: String, val gameType: GameType)
+data class EntryChannel(val id: Snowflake, val idCategory: Snowflake, val mmr: MMR, val gameType: GameType)
+data class TempChannel(val id: Snowflake, val idCategory: Snowflake, val mmr: MMR, val gameType: GameType)
+data class TempChannelCategory(val id: Snowflake, val mmr: MMR, val gameType: GameType)
+
 class AutoHuntBot(private val token: String) {
     private lateinit var bot: Kord
     private val entryChannelPrefix = "Rch"
     private val entryChannelKeyPrefix = "MMR"
-    private val entryChannelKeys = listOf("*", "3", "4-5", "6", "usr")
-    private val entryCategories = listOf("TRIO - Rch hunter", "DUO - Rch hunter")
-    private val entryChannelIds = mutableListOf<Triple<Snowflake, String, String>>()
-    private val tempChannelsIds = mutableListOf<Triple<Snowflake, String, String>>()
+
+    private val entryCategories = listOf(
+        EntryCategory("TRIO - Rch hunter", GameType.Trio), EntryCategory("DUO - Rch hunter", GameType.Duo)
+    )
+    private val DEV_CLEANUP = true
+
+    private val entryChannels = mutableListOf<EntryChannel>()
+    private val tempChannels = mutableListOf<TempChannel>()
+    private val categoriesTempChannels = mutableListOf<TempChannelCategory>()
 
     suspend fun start() {
         bot = Kord(token)
@@ -35,21 +55,10 @@ class AutoHuntBot(private val token: String) {
         bot.on<VoiceStateUpdateEvent> {
             autoManageUserIfEventInEntryChannel(this)
             channelCleanup(this)
-            logger.debug { "DEBUG entry channel" }
-            entryChannelIds.forEach {
-                logger.debug { it }
-            }
-            logger.debug { "DEBUG temp channel" }
-            tempChannelsIds.forEach {
-                logger.debug { it }
-            }
         }
         bot.on<ChatInputCommandCreateEvent> {
             blacklistCommand(this)
         }
-        //bot.on<Event> {
-        //    logger.debug { this }
-        //}
         bot.login()
     }
 
@@ -61,30 +70,36 @@ class AutoHuntBot(private val token: String) {
         logger.debug { "Guilds ${event.guildIds}" }
         event.guilds.forEach { guild ->
             // Manual cleanup for dev
-            deleteEverything(guild)
-            entryCategories.forEach {
-                deleteChannelsAndCategory(it, guild)
+            if (DEV_CLEANUP) {
+                deleteEverything(guild)
+                entryCategories.forEach {
+                    deleteChannelsAndCategory(it.name, guild)
+                }
+                deleteChannelsAndCategory("MMR 3 TRIO", guild)
+                deleteChannelsAndCategory("MMR 3-4 TRIO", guild)
+                deleteChannelsAndCategory("MMR 4-5 TRIO", guild)
+                deleteChannelsAndCategory("MMR 6 TRIO", guild)
+                deleteChannelsAndCategory("MMR * TRIO", guild)
+                deleteChannelsAndCategory("MMR * DUO", guild)
+                deleteChannelsAndCategory("MMR 3 DUO", guild)
+                deleteChannelsAndCategory("MMR 3-4 DUO", guild)
+                deleteChannelsAndCategory("MMR 6 DUO", guild)
+                deleteChannelsAndCategory("MMR 4-5 DUO", guild)
+                deleteChannelsAndCategory("MMR usr DUO", guild)
+                deleteChannelsAndCategory("MMR usr TRIO", guild)
+                logger.debug { "Cleanup done" }
             }
-            deleteChannelsAndCategory("MMR 3 TRIO", guild)
-            deleteChannelsAndCategory("MMR 4-5 TRIO", guild)
-            deleteChannelsAndCategory("MMR 6 TRIO", guild)
-            deleteChannelsAndCategory("MMR * TRIO", guild)
-            deleteChannelsAndCategory("MMR * DUO", guild)
-            deleteChannelsAndCategory("MMR 3 DUO", guild)
-            deleteChannelsAndCategory("MMR 6 DUO", guild)
-            deleteChannelsAndCategory("MMR 4-5 DUO", guild)
-            deleteChannelsAndCategory("MMR usr DUO", guild)
-            deleteChannelsAndCategory("MMR usr TRIO", guild)
-            logger.debug { "Cleanup done" }
-            entryCategories.forEach { category ->
-                val suffixEntry = category.split("-").first().trim()
-                entryChannelKeys.forEach { key ->
-                    val currentChannelName = when (key) {
+            entryCategories.forEach { entryCategory ->
+                val suffixEntry = entryCategory.gameType.name
+                val category = getOrCreateCategory(guild, entryCategory.name)
+                MMR::class.sealedSubclasses.mapNotNull { it.objectInstance }.forEach { key ->
+                    val currentChannelName = when (key.mmrKey) {
                         "usr" -> "Ton Vocal $suffixEntry"
-                        else -> "$entryChannelPrefix $entryChannelKeyPrefix $key $suffixEntry"
+                        else -> "$entryChannelPrefix $entryChannelKeyPrefix ${key.mmrKey} $suffixEntry"
                     }
-                    val voiceEntryChannelId = createEntryChannelIfNotExisting(category, currentChannelName, guild)
-                    entryChannelIds.add(Triple(voiceEntryChannelId, key, suffixEntry))
+                    val voiceEntryChannelId =
+                        createEntryChannelIfNotExisting(entryCategory.name, currentChannelName, guild, key.position)
+                    entryChannels.add(EntryChannel(voiceEntryChannelId, category.id, key, entryCategory.gameType))
                 }
             }
         }
@@ -92,16 +107,19 @@ class AutoHuntBot(private val token: String) {
 
     private suspend fun autoManageUserIfEventInEntryChannel(event: VoiceStateUpdateEvent) {
         val guild = event.state.getGuild()
-        val triple = entryChannelIds.find { (id, _, _) -> id == event.state.channelId }
-        triple?.let { (channelId, mmrKey, typeKey) ->
-            when (mmrKey) {
-                "usr" -> userBasedCreation(event)
-                else -> {
-                    val tempChannel = createOrGetTemporaryChannel(guild, mmrKey, typeKey)
+        val entryChannel = entryChannels.find { event.state.channelId == it.id } ?: return
+        when (entryChannel.mmr) {
+            MMR.USER -> createTempChannelUserMmr(event)
+            else -> {
+                val tempChannel = createOrGetTemporaryChannel(guild, entryChannel.mmr, entryChannel.gameType)
+                val memberName = event.state.getMember().displayName
+                tempChannel?.let {
                     event.state.getMember().edit {
                         voiceChannelId = tempChannel.id
                     }
                 }
+                if (tempChannel == null)
+                    logger.info { "Not moving user $memberName since no compat chan found" }
             }
         }
     }
@@ -111,38 +129,34 @@ class AutoHuntBot(private val token: String) {
         voiceChannelId?.let {
             val voiceChannel = voiceStateUpdateEvent.state.getGuild().getChannel(voiceChannelId) as VoiceChannel
             logger.debug { "cleanup got voicechan $voiceChannel" }
-            if (!tempChannelsIds.map { (id, _, _) -> id }.contains(voiceChannel.id)) {
-                return
-            }
-            if (voiceChannel.voiceStates.toList().isEmpty()) {
-                voiceChannel.delete()
-                tempChannelsIds.remove(tempChannelsIds.find { (id, _, _) -> id == voiceChannel.id })
+            val tempChannel = tempChannels.find { it.id == voiceChannelId }
+            tempChannel?.let {
+                if (voiceChannel.voiceStates.toList().isEmpty()) {
+                    voiceChannel.delete()
+                    tempChannels.remove(tempChannel)
+                }
             }
         }
     }
 
-    private suspend fun userBasedCreation(voiceStateUpdateEvent: VoiceStateUpdateEvent) {
-        val member = voiceStateUpdateEvent.state.getMember()
-        val name = member.displayName
-        val type =
-            entryChannelIds.find { (id, _, _) -> voiceStateUpdateEvent.state.getChannelOrNull()?.id == id }?.third
-        val voiceChannel = createOrGetUserTempChannel(member.getGuild(), name, type!!)
-        member.edit {
-            voiceChannelId = voiceChannel.id
-        }
+    private suspend fun createTempChannelUserMmr(voiceStateUpdateEvent: VoiceStateUpdateEvent) {
+            val member = voiceStateUpdateEvent.state.getMember()
+            val memberName = member.displayName
+            val gameType = entryChannels.firstOrNull { voiceStateUpdateEvent.state.channelId == it.id }?.gameType
+            val voiceChannel = createOrGetUserTempChannel(member.getGuild(), memberName, gameType!!)
+            member.edit {
+                voiceChannelId = voiceChannel.id
+            }
     }
 
-    private suspend fun createOrGetUserTempChannel(guild: Guild, name: String, type: String): VoiceChannel {
-        val categoryName = forgeTempChannelCategoryName("usr", type)
-        val tempChannelsCategory = getOrCreateCategory(guild, guild.channels.toList(), categoryName)
-        val maxHunters = getMaxUsersFromType(type)
-        val tempVoiceChannel = guild.channels.filterIsInstance<VoiceChannel>().filter {
-            it.category?.id == tempChannelsCategory.id && it.voiceStates.toList().size < maxHunters
-        }.firstOrNull() ?: guild.createVoiceChannel("$name hunt") {
-            userLimit = maxHunters
+    private suspend fun createOrGetUserTempChannel(guild: Guild, name: String, gameType: GameType): VoiceChannel {
+        val categoryName = "$entryChannelKeyPrefix ${"usr"} ${gameType.name}"
+        val tempChannelsCategory = getOrCreateCategory(guild, categoryName)
+        val tempVoiceChannel = guild.createVoiceChannel("$name hunt") {
+            userLimit = gameType.maxHunters
             parentId = tempChannelsCategory.id
         }
-        tempChannelsIds.add(Triple(tempVoiceChannel.id, "usr", type))
+        tempChannels.add(TempChannel(tempVoiceChannel.id, tempChannelsCategory.id, MMR.USER, gameType))
         return tempVoiceChannel
     }
 
@@ -163,31 +177,29 @@ class AutoHuntBot(private val token: String) {
     }
 
     private suspend fun createEntryChannelIfNotExisting(
-        categoryName: String, currentChannelName: String, guild: GuildBehavior
+        categoryName: String, currentChannelName: String, guild: GuildBehavior, positionEntry: Int
     ): Snowflake {
         val guildChannels = guild.channels.toList()
-        val category = getOrCreateCategory(guild, guildChannels, categoryName)
+        val category = getOrCreateCategory(guild, categoryName)
         val channel =
             guildChannels.find { it.name == currentChannelName } ?: guild.createVoiceChannel(currentChannelName) {
                 parentId = category.id
+                position = positionEntry
             }
         return channel.id
     }
 
-    private fun forgeTempChannelCategoryName(mmrKey: String, typeKey: String): String {
-        return "$entryChannelKeyPrefix $mmrKey $typeKey"
-    }
-
     private suspend fun getOrCreateCategory(
-        guild: GuildBehavior, guildChannels: List<TopGuildChannel>, categoryName: String
+        guild: GuildBehavior, categoryName: String
     ): TopGuildChannel {
-        val existingCategory = guildChannels.find { it.type == ChannelType.GuildCategory && it.name == categoryName }
+        val existingCategory =
+            guild.channels.toList().find { it.type == ChannelType.GuildCategory && it.name == categoryName }
         if (existingCategory != null) {
             return existingCategory
         }
 
         val everyoneRole = guild.getRoleOrNull(guild.id)
-        return guild.createCategory(categoryName) {
+        val category = guild.createCategory(categoryName) {
             //permissionOverwrites.add(
             //    Overwrite(
             //        id = everyoneRole?.id!!, type = OverwriteType.Role, allow = Permissions(), deny = Permissions(
@@ -196,62 +208,63 @@ class AutoHuntBot(private val token: String) {
             //    )
             //)
         }
+        return category
     }
 
 
-    private suspend fun createOrGetTemporaryChannel(guild: Guild, mmrKey: String, typeKey: String): VoiceChannel {
-        val categoryName = forgeTempChannelCategoryName(mmrKey, typeKey)
-        val tempChannelsCategory = getOrCreateCategory(guild, guild.channels.toList(), categoryName)
+    private suspend fun createOrGetTemporaryChannel(guild: Guild, mmr: MMR, gameType: GameType): VoiceChannel? {
         // filtering on these categories
         val categoryIdsWhitelist = mutableListOf<Snowflake>().apply {
-            when (mmrKey) {
+            when (mmr.mmrKey) {
                 "*" -> {
-                    val chanIds = tempChannelsIds.filter { (id, mmr, type) -> type == typeKey && mmr != "usr" }.map{
-                        (id, _, _) -> id }.toList()
-                    chanIds.map { (guild.getChannel(it) as VoiceChannel).category?.id }.distinct().forEach {
-                        it?.let {
-                            add(it)
-                        }
+                    categoriesTempChannels.filter { it.gameType == gameType }.forEach {
+                        add(it.id)
                     }
                 }
+
                 "usr" -> {
                     // noop
                 }
+
                 else -> {
-                    add(tempChannelsCategory.id)
+                    categoriesTempChannels.filter { it.gameType == gameType && it.mmr == mmr }.forEach {
+                        add(it.id)
+                    }
                 }
             }
         }
         logger.debug { categoryIdsWhitelist }
-        val maxHunters = getMaxUsersFromType(typeKey)
-        val tempVoiceChannel = guild.channels.filterIsInstance<VoiceChannel>().filter {
-            categoryIdsWhitelist.contains(it.category?.id) && it.voiceStates.toList().size < maxHunters
-        }.firstOrNull() ?: guild.createVoiceChannel(forgeNewTempChannelName(guild)) {
-            userLimit = maxHunters
-            parentId = tempChannelsCategory.id
+        val tempChannel = tempChannels.firstOrNull {
+            categoryIdsWhitelist.contains(it.idCategory) &&
+                    guild.getChannelOf<VoiceChannel>(it.id).voiceStates.toList().size < gameType.maxHunters
         }
-        tempChannelsIds.add(Triple(tempVoiceChannel.id, mmrKey, typeKey))
-        return tempVoiceChannel
-    }
-
-    private suspend fun forgeNewTempChannelName(guild: Guild): String {
-        val usedNames = guild.channels.filterIsInstance<VoiceChannel>().filter {
-            it.id in tempChannelsIds.map { (id, _, _) -> id }
-        }.map { it.name }.toSet()
-        logger.debug { "used names $usedNames" }
-        val value = frakturedStates.minus(usedNames).random()
-        logger.debug { value }
-        return value
-    }
-
-    private fun getMaxUsersFromType(typeKey: String): Int {
-        return when (typeKey) {
-            "TRIO" -> 3
-            "DUO" -> 2
-            else -> {
-                logger.error { "Bad stuff about to happen here, typeKey unknown $typeKey" }
-                -1
+        return when (tempChannel) {
+            null -> {
+                when (mmr) {
+                    MMR.STAR -> null
+                    else -> {
+                        val categoryName = "$entryChannelKeyPrefix ${mmr.mmrKey} ${gameType.name}"
+                        val tempChannelsCategory = getOrCreateCategory(guild, categoryName)
+                        if (categoriesTempChannels.find { it.id == tempChannelsCategory.id } == null) {
+                            categoriesTempChannels.add(TempChannelCategory(tempChannelsCategory.id, mmr, gameType))
+                        }
+                        val voiceChannel = guild.createVoiceChannel(newTempChannelName(guild)) {
+                            parentId = tempChannelsCategory.id
+                        }
+                        tempChannels.add(TempChannel(voiceChannel.id, tempChannelsCategory.id, mmr, gameType))
+                        voiceChannel
+                    }
+                }
             }
+
+            else -> guild.getChannelOf<VoiceChannel>(tempChannel.id)
         }
+    }
+
+    private suspend fun newTempChannelName(guild: Guild): String {
+        val usedNames = guild.channels.filterIsInstance<VoiceChannel>().filter {
+            it.id in tempChannels.map { chan -> chan.id }
+        }.map { it.name }.toSet()
+        return frakturedStates.minus(usedNames).random()
     }
 }
