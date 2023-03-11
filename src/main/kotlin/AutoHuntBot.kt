@@ -1,11 +1,13 @@
-import dev.kord.common.entity.*
+import dev.kord.common.entity.ChannelType
+import dev.kord.common.entity.Snowflake
 import dev.kord.core.Kord
 import dev.kord.core.behavior.*
+import dev.kord.core.behavior.interaction.response.respond
 import dev.kord.core.entity.Guild
 import dev.kord.core.entity.channel.TopGuildChannel
 import dev.kord.core.entity.channel.VoiceChannel
 import dev.kord.core.event.gateway.ReadyEvent
-import dev.kord.core.event.interaction.ChatInputCommandCreateEvent
+import dev.kord.core.event.interaction.GuildUserCommandInteractionCreateEvent
 import dev.kord.core.event.user.VoiceStateUpdateEvent
 import dev.kord.core.on
 import kotlinx.coroutines.flow.*
@@ -17,9 +19,9 @@ private val logger = KotlinLogging.logger { }
 sealed class MMR(val mmrKey: String, val position: Int) {
     object STAR : MMR("*", 1)
     object THREE : MMR("3-4", 2)
-    object FOUR : MMR("4-5",3)
-    object FIVE : MMR("5-6",4)
-    object USER : MMR("usr",5)
+    object FOUR : MMR("4-5", 3)
+    object FIVE : MMR("5-6", 4)
+    object USER : MMR("usr", 5)
 }
 
 sealed class GameType(val maxHunters: Int, val name: String) {
@@ -36,11 +38,15 @@ class AutoHuntBot(private val token: String) {
     private lateinit var bot: Kord
     private val entryChannelPrefix = "Rch"
     private val entryChannelKeyPrefix = "MMR"
+    private val blacklistCommandName = "blacklist"
+    private val blacklistRemoveCommandName = "blacklistremove"
+    private val blacklistStatusCommandName = "blackliststatus"
+    private val blacklist = mutableMapOf<Long, MutableList<Long>>()
 
     private val entryCategories = listOf(
         EntryCategory("TRIO - Rch hunter", GameType.Trio), EntryCategory("DUO - Rch hunter", GameType.Duo)
     )
-    private val DEV_CLEANUP = true
+    private val DEV_CLEANUP = false
 
     private val entryChannels = mutableListOf<EntryChannel>()
     private val tempChannels = mutableListOf<TempChannel>()
@@ -53,17 +59,76 @@ class AutoHuntBot(private val token: String) {
             initEntryChannels(this)
         }
         bot.on<VoiceStateUpdateEvent> {
-            autoManageUserIfEventInEntryChannel(this)
+            autoManageUserInEntryChannel(this)
             channelCleanup(this)
         }
-        bot.on<ChatInputCommandCreateEvent> {
-            blacklistCommand(this)
+        bot.on<GuildUserCommandInteractionCreateEvent> {
+            when (interaction.invokedCommandName) {
+                blacklistCommandName -> blacklistCommand(this)
+                blacklistRemoveCommandName -> blacklistRemoveCommand(this)
+                blacklistStatusCommandName -> blacklistStatus(this)
+            }
+        }
+        bot.guilds.toList().forEach {
+            bot.createGuildUserCommand(it.id, blacklistCommandName)
+            bot.createGuildUserCommand(it.id, blacklistRemoveCommandName)
+            bot.createGuildUserCommand(it.id, blacklistStatusCommandName)
         }
         bot.login()
     }
 
-    private fun blacklistCommand(inputCommand: ChatInputCommandCreateEvent) {
-        logger.debug { "inputcommand $inputCommand" }
+    private suspend fun blacklistStatus(event: GuildUserCommandInteractionCreateEvent) {
+        val response = event.interaction.deferEphemeralResponse()
+        val usersBlacklisted = blacklist[event.interaction.user.id.value.toLong()]
+        val guild = event.interaction.guild
+        val msg = if (usersBlacklisted.isNullOrEmpty()) {
+            "Empty blacklist"
+        } else {
+            "Blacklist content\n${usersBlacklisted.map { guild.getMember(Snowflake(it)).displayName }}"
+        }
+        response.respond {
+            content = msg
+        }
+    }
+
+    private suspend fun blacklistCommand(commandEvent: GuildUserCommandInteractionCreateEvent) {
+        val response = commandEvent.interaction.deferEphemeralResponse()
+        val user = commandEvent.interaction.user
+        logger.debug { "${user.id} ${commandEvent.interaction.targetId}" }
+        val targetId = commandEvent.interaction.targetId
+        val msg = when (blacklistUser(user.id.value.toLong(), targetId.value.toLong())) {
+            true -> "Hunter ${commandEvent.interaction.target.asUser().username} blacklisté"
+            false -> "Erreur"
+        }
+        response.respond {
+            content = msg
+        }
+    }
+
+    private suspend fun blacklistRemoveCommand(commandEvent: GuildUserCommandInteractionCreateEvent) {
+        val response = commandEvent.interaction.deferEphemeralResponse()
+        val user = commandEvent.interaction.user
+        val targetUser = commandEvent.interaction.target.asUser()
+        val msg = "Hunter ${targetUser.username} retiré de la blacklist"
+        removeUserFromBlacklist(user.id.value.toLong(), targetUser.id.value.toLong())
+        response.respond {
+            content = msg
+        }
+    }
+
+    private fun blacklistUser(blacklister: Long, blacklistee: Long): Boolean {
+        if (blacklister == blacklistee || bot.selfId.value.toLong() == blacklistee) return false
+        val userBlacklist = blacklist[blacklister]
+        if (userBlacklist == null) {
+            blacklist[blacklister] = mutableListOf<Long>().apply { add(blacklistee) }
+        } else {
+            blacklist[blacklister]?.add(blacklistee)
+        }
+        return true
+    }
+
+    private fun removeUserFromBlacklist(blacklister: Long, blacklistee: Long) {
+        blacklist[blacklister]?.remove(blacklistee)
     }
 
     private suspend fun initEntryChannels(event: ReadyEvent) {
@@ -105,21 +170,20 @@ class AutoHuntBot(private val token: String) {
         }
     }
 
-    private suspend fun autoManageUserIfEventInEntryChannel(event: VoiceStateUpdateEvent) {
+    private suspend fun autoManageUserInEntryChannel(event: VoiceStateUpdateEvent) {
         val guild = event.state.getGuild()
         val entryChannel = entryChannels.find { event.state.channelId == it.id } ?: return
         when (entryChannel.mmr) {
             MMR.USER -> createTempChannelUserMmr(event)
             else -> {
-                val tempChannel = createOrGetTemporaryChannel(guild, entryChannel.mmr, entryChannel.gameType)
+                val tempChannel = createOrGetTemporaryChannel(event.state.userId.value.toLong(), guild, entryChannel.mmr, entryChannel.gameType)
                 val memberName = event.state.getMember().displayName
                 tempChannel?.let {
                     event.state.getMember().edit {
                         voiceChannelId = tempChannel.id
                     }
                 }
-                if (tempChannel == null)
-                    logger.info { "Not moving user $memberName since no compat chan found" }
+                if (tempChannel == null) logger.info { "Not moving user $memberName since no compat chan found" }
             }
         }
     }
@@ -140,20 +204,20 @@ class AutoHuntBot(private val token: String) {
     }
 
     private suspend fun createTempChannelUserMmr(voiceStateUpdateEvent: VoiceStateUpdateEvent) {
-            val member = voiceStateUpdateEvent.state.getMember()
-            val memberName = member.displayName
-            val gameType = entryChannels.firstOrNull { voiceStateUpdateEvent.state.channelId == it.id }?.gameType
-            val voiceChannel = createOrGetUserTempChannel(member.getGuild(), memberName, gameType!!)
-            member.edit {
-                voiceChannelId = voiceChannel.id
-            }
+        val member = voiceStateUpdateEvent.state.getMember()
+        val memberName = member.displayName
+        val gameType = entryChannels.firstOrNull { voiceStateUpdateEvent.state.channelId == it.id }?.gameType
+        val voiceChannel = createOrGetUserTempChannel(member.getGuild(), memberName, gameType!!)
+        member.edit {
+            voiceChannelId = voiceChannel.id
+        }
     }
 
     private suspend fun createOrGetUserTempChannel(guild: Guild, name: String, gameType: GameType): VoiceChannel {
         val categoryName = "$entryChannelKeyPrefix ${"usr"} ${gameType.name}"
         val tempChannelsCategory = getOrCreateCategory(guild, categoryName)
         val tempVoiceChannel = guild.createVoiceChannel("$name hunt") {
-            userLimit = gameType.maxHunters
+            userLimit = 8
             parentId = tempChannelsCategory.id
         }
         tempChannels.add(TempChannel(tempVoiceChannel.id, tempChannelsCategory.id, MMR.USER, gameType))
@@ -212,23 +276,23 @@ class AutoHuntBot(private val token: String) {
     }
 
 
-    private suspend fun createOrGetTemporaryChannel(guild: Guild, mmr: MMR, gameType: GameType): VoiceChannel? {
+    private suspend fun createOrGetTemporaryChannel(userId: Long, guild: Guild, mmr: MMR, gameType: GameType): VoiceChannel? {
         // filtering on these categories
         val categoryIdsWhitelist = mutableListOf<Snowflake>().apply {
             when (mmr.mmrKey) {
                 "*" -> {
-                    categoriesTempChannels.filter { it.gameType == gameType }.forEach {
-                        add(it.id)
+                    categoriesTempChannels.filter { it.gameType == gameType }.forEach {tempChan ->
+                        add(tempChan.id)
                     }
                 }
 
                 "usr" -> {
-                    // noop
+                    // noop, also unused for now
                 }
 
                 else -> {
-                    categoriesTempChannels.filter { it.gameType == gameType && it.mmr == mmr }.forEach {
-                        add(it.id)
+                    categoriesTempChannels.filter { it.gameType == gameType && it.mmr == mmr }.forEach {tempChan ->
+                        add(tempChan.id)
                     }
                 }
             }
@@ -236,7 +300,8 @@ class AutoHuntBot(private val token: String) {
         logger.debug { categoryIdsWhitelist }
         val tempChannel = tempChannels.firstOrNull {
             categoryIdsWhitelist.contains(it.idCategory) &&
-                    guild.getChannelOf<VoiceChannel>(it.id).voiceStates.toList().size < gameType.maxHunters
+                    guild.getChannelOf<VoiceChannel>(it.id).voiceStates.toList().size < gameType.maxHunters &&
+                    channelHasNoBlacklistedUser(userId,guild, it)
         }
         return when (tempChannel) {
             null -> {
@@ -258,6 +323,17 @@ class AutoHuntBot(private val token: String) {
             }
 
             else -> guild.getChannelOf<VoiceChannel>(tempChannel.id)
+        }
+    }
+
+    private suspend fun channelHasNoBlacklistedUser(userId: Long, guild: Guild, tempChannel: TempChannel): Boolean {
+        val listDebug =  guild.getChannelOf<VoiceChannel>(tempChannel.id).voiceStates.firstOrNull {
+            blacklist[userId]?.contains(it.userId.value.toLong()) == true
+        }
+        logger.debug { listDebug }
+        return when(listDebug) {
+            null -> true
+            else -> false
         }
     }
 
