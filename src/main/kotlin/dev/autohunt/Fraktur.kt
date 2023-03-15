@@ -1,5 +1,10 @@
+package dev.autohunt
+
 import mu.KotlinLogging
-val frakturMap = mapOf(
+
+private val logger = KotlinLogging.logger {}
+
+private val frakturMap = mapOf(
     'a' to "𝔞",
     'b' to "𝔟",
     'c' to "𝔠",
@@ -116,20 +121,14 @@ internal val statesOfTheUSofA: List<String> = listOf(
     "Wyoming"
 )
 
-private val logger = KotlinLogging.logger {}
-val frakturedStates: List<String> = statesOfTheUSofA.map { state -> fraktur(state) }
-
-fun fraktur(state: String): String {
+private fun fraktur(state: String): String {
     val sb = StringBuilder()
     state.forEach { char ->
         sb.append(
-            if (frakturMap.containsKey(char)) {
-                frakturMap[char]
-            } else {
-                char
-            }
+            frakturMap[char] ?: char
         )
     }
-    //logger.debug { "$state ${sb.length} ${sb.toString()}" }
     return sb.toString()
 }
+
+val frakturedStates: List<String> = statesOfTheUSofA.map { state -> fraktur(state) }

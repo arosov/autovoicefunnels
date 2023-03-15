@@ -1,3 +1,5 @@
+package dev.autohunt
+
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
