@@ -1,6 +1,6 @@
 package dev.autovoicefunnels.bot
 
-import dev.autovoicefunnels.frakturedStates
+import dev.autovoicefunnels.frakturedChannelNames
 import dev.autovoicefunnels.models.*
 import dev.autovoicefunnels.writeConfig
 import dev.kord.common.entity.Snowflake
@@ -256,7 +256,7 @@ internal suspend fun AutoVoiceFunnelsBot.newTempChannelFrakturedName(guild: Guil
     val usedNames = guild.channels.filterIsInstance<VoiceChannel>().filter {
         it.id in tempChannels.map { chan -> chan.id }
     }.map { it.name }.toSet()
-    return frakturedStates.minus(usedNames).random()
+    return frakturedChannelNames.minus(usedNames).random()
 }
 
 internal suspend fun AutoVoiceFunnelsBot.createEntryChannelsAndCategories(event: ReadyEvent) {

@@ -1,6 +1,7 @@
 package dev.autovoicefunnels
 
 import mu.KotlinLogging
+import java.io.File
 
 private val logger = KotlinLogging.logger {}
 
@@ -131,4 +132,26 @@ private fun fraktur(state: String): String {
     return sb.toString()
 }
 
-val frakturedStates: List<String> = statesOfTheUSofA.map { state -> fraktur(state) }
+private val fileNameChannelsNames = "channel_names.txt"
+
+private fun initializeChannelNamesFile() {
+    val fileChanNames = File(fileNameChannelsNames)
+    if (fileChanNames.exists()) return
+    fileChanNames.printWriter().use {
+        out -> statesOfTheUSofA.forEach { state -> out.println(state) }
+    }
+}
+
+val frakturedChannelNames: List<String> = run {
+    initializeChannelNamesFile()
+    loadChannelNamesFile().map { name -> fraktur(name) }
+}
+
+fun loadChannelNamesFile(): List<String> {
+    return mutableListOf<String>().apply {
+        val fileChanNames = File(fileNameChannelsNames)
+        fileChanNames.reader().use {
+            reader -> addAll(reader.readLines())
+        }
+    }
+}
