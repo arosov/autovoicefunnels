@@ -1,4 +1,4 @@
-package dev.autohunt.bot
+package dev.autovoicefunnels.bot
 
 import dev.kord.common.entity.Snowflake
 import dev.kord.core.behavior.getChannelOf
@@ -11,7 +11,7 @@ import mu.KotlinLogging
 
 private val logger = KotlinLogging.logger { }
 
-private suspend fun AutoHuntBot.blacklistStatus(event: GuildUserCommandInteractionCreateEvent) {
+private suspend fun AutoVoiceFunnelsBot.blacklistStatus(event: GuildUserCommandInteractionCreateEvent) {
     val response = event.interaction.deferEphemeralResponse()
     val usersBlacklisted = blacklist[event.interaction.user.id.value.toLong()]
     val guild = event.interaction.guild
@@ -25,7 +25,7 @@ private suspend fun AutoHuntBot.blacklistStatus(event: GuildUserCommandInteracti
     }
 }
 
-private suspend fun AutoHuntBot.blacklistCommand(commandEvent: GuildUserCommandInteractionCreateEvent) {
+private suspend fun AutoVoiceFunnelsBot.blacklistCommand(commandEvent: GuildUserCommandInteractionCreateEvent) {
     val response = commandEvent.interaction.deferEphemeralResponse()
     val user = commandEvent.interaction.user
     logger.debug { "${user.id} ${commandEvent.interaction.targetId}" }
@@ -39,7 +39,7 @@ private suspend fun AutoHuntBot.blacklistCommand(commandEvent: GuildUserCommandI
     }
 }
 
-private suspend fun AutoHuntBot.blacklistRemoveCommand(commandEvent: GuildUserCommandInteractionCreateEvent) {
+private suspend fun AutoVoiceFunnelsBot.blacklistRemoveCommand(commandEvent: GuildUserCommandInteractionCreateEvent) {
     val response = commandEvent.interaction.deferEphemeralResponse()
     val user = commandEvent.interaction.user
     val targetUser = commandEvent.interaction.target.asUser()
@@ -50,7 +50,7 @@ private suspend fun AutoHuntBot.blacklistRemoveCommand(commandEvent: GuildUserCo
     }
 }
 
-private fun AutoHuntBot.blacklistUser(blacklister: Long, blacklistee: Long): Boolean {
+private fun AutoVoiceFunnelsBot.blacklistUser(blacklister: Long, blacklistee: Long): Boolean {
     if (blacklister == blacklistee || bot.selfId.value.toLong() == blacklistee) return false
     val userBlacklist = blacklist[blacklister]
     if (userBlacklist == null) {
@@ -61,11 +61,11 @@ private fun AutoHuntBot.blacklistUser(blacklister: Long, blacklistee: Long): Boo
     return true
 }
 
-private fun AutoHuntBot.removeUserFromBlacklist(blacklister: Long, blacklistee: Long) {
+private fun AutoVoiceFunnelsBot.removeUserFromBlacklist(blacklister: Long, blacklistee: Long) {
     blacklist[blacklister]?.remove(blacklistee)
 }
 
-internal suspend fun AutoHuntBot.channelHasNoBlacklistedUser(userId: Long, guild: Guild, tempChannel: TempChannel): Boolean {
+internal suspend fun AutoVoiceFunnelsBot.channelHasNoBlacklistedUser(userId: Long, guild: Guild, tempChannel: TempChannel): Boolean {
     if (userId<0) return true
     val blacklistedFirstUserFound = guild.getChannelOf<VoiceChannel>(tempChannel.id).voiceStates.firstOrNull {
         blacklist[userId]?.contains(it.userId.value.toLong()) == true

@@ -1,3 +1,3 @@
 
-rootProject.name = "AutoHunt"
+rootProject.name = "AutoVoiceFunnels"
 

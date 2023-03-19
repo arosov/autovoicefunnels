@@ -1,4 +1,4 @@
-package dev.autohunt
+package dev.autovoicefunnels
 
 import mu.KotlinLogging
 

@@ -1,8 +1,8 @@
-package dev.autohunt.bot
+package dev.autovoicefunnels.bot
 
-import dev.autohunt.frakturedStates
-import dev.autohunt.models.*
-import dev.autohunt.writeConfig
+import dev.autovoicefunnels.frakturedStates
+import dev.autovoicefunnels.models.*
+import dev.autovoicefunnels.writeConfig
 import dev.kord.common.entity.Snowflake
 import dev.kord.core.behavior.*
 import dev.kord.core.behavior.channel.edit
@@ -21,7 +21,7 @@ import mu.KotlinLogging
 private val logger = KotlinLogging.logger { }
 
 
-internal fun AutoHuntBot.findFunnel(funnelId: String): VoiceFunnel? {
+internal fun AutoVoiceFunnelsBot.findFunnel(funnelId: String): VoiceFunnel? {
     return funnelsGroups.flatMap {
         it.entryChannelsGroup
     }.firstOrNull {
@@ -29,7 +29,7 @@ internal fun AutoHuntBot.findFunnel(funnelId: String): VoiceFunnel? {
     }
 }
 
-internal suspend fun AutoHuntBot.autoManageUserInEntryChannel(event: VoiceStateUpdateEvent) {
+internal suspend fun AutoVoiceFunnelsBot.autoManageUserInEntryChannel(event: VoiceStateUpdateEvent) {
     val guild = event.state.getGuild()
     val entryChannel = entryChannels.find { event.state.channelId == it.id } ?: return
     val funnel = findFunnel(entryChannel.funnelEntryChannelName) ?: return
@@ -80,7 +80,7 @@ internal suspend fun AutoHuntBot.autoManageUserInEntryChannel(event: VoiceStateU
 
 }
 
-internal suspend fun AutoHuntBot.autoMoveFromTransitChannels(voiceStateUpdateEvent: VoiceStateUpdateEvent) {
+internal suspend fun AutoVoiceFunnelsBot.autoMoveFromTransitChannels(voiceStateUpdateEvent: VoiceStateUpdateEvent) {
     val guild = voiceStateUpdateEvent.state.getGuild()
     val transitChanId = voiceStateUpdateEvent.state.channelId ?: return
     val transitChannel = transitChannels.find { voiceStateUpdateEvent.state.channelId == it.id } ?: return
@@ -113,12 +113,12 @@ internal suspend fun AutoHuntBot.autoMoveFromTransitChannels(voiceStateUpdateEve
     }
 }
 
-internal suspend fun AutoHuntBot.createEntryChannelIfNotExisting(
+internal suspend fun AutoVoiceFunnelsBot.createEntryChannelIfNotExisting(
     guild: GuildBehavior, categoryName: String, currentChannelName: String
 ): Snowflake {
     val guildChannels = guild.channels.toList()
     val category = getOrCreateCategory(guild, categoryName)
-    autoHuntState.snowflakeMap[guild.id]?.find { (dslname, _) -> dslname == currentChannelName }?.let {
+    autoVoiceFunnelsState.snowflakeMap[guild.id]?.find { (dslname, _) -> dslname == currentChannelName }?.let {
         (_, snowflake) ->
         guildChannels.firstOrNull { it.id == snowflake }?.let {
             return snowflake
@@ -132,17 +132,17 @@ internal suspend fun AutoHuntBot.createEntryChannelIfNotExisting(
     return channel.id
 }
 
-internal suspend fun AutoHuntBot.addResourceNameToState(guildId: Snowflake, resourceName: String, resourceId: Snowflake) {
+internal suspend fun AutoVoiceFunnelsBot.addResourceNameToState(guildId: Snowflake, resourceName: String, resourceId: Snowflake) {
     val pairNameSnowflake = Pair(resourceName, resourceId)
-    if (autoHuntState.snowflakeMap[guildId] == null) autoHuntState.snowflakeMap[guildId] = mutableListOf()
-    if (autoHuntState.snowflakeMap[guildId]?.contains(pairNameSnowflake) == false)
-        autoHuntState.snowflakeMap[guildId]?.add(pairNameSnowflake)
+    if (autoVoiceFunnelsState.snowflakeMap[guildId] == null) autoVoiceFunnelsState.snowflakeMap[guildId] = mutableListOf()
+    if (autoVoiceFunnelsState.snowflakeMap[guildId]?.contains(pairNameSnowflake) == false)
+        autoVoiceFunnelsState.snowflakeMap[guildId]?.add(pairNameSnowflake)
 }
 
-internal suspend fun AutoHuntBot.getOrCreateCategory(
+internal suspend fun AutoVoiceFunnelsBot.getOrCreateCategory(
     guild: GuildBehavior, categoryName: String
 ): TopGuildChannel {
-    autoHuntState.snowflakeMap[guild.id]?.find { (dslName,_) -> dslName == categoryName }?.let {
+    autoVoiceFunnelsState.snowflakeMap[guild.id]?.find { (dslName,_) -> dslName == categoryName }?.let {
             (_, snowflake) ->
         guild.channels.filterIsInstance<Category>().firstOrNull{ it.id == snowflake }?.let {
             return it
@@ -171,7 +171,7 @@ internal suspend fun AutoHuntBot.getOrCreateCategory(
     return category
 }
 
-internal suspend fun AutoHuntBot.getOrCreateTransitChannel(
+internal suspend fun AutoVoiceFunnelsBot.getOrCreateTransitChannel(
     guild: Guild, userId: Long, voiceFunnel: VoiceFunnel
 ): VoiceChannel? {
     val funnelTransit = voiceFunnel.funnelTransit
@@ -212,13 +212,13 @@ internal suspend fun AutoHuntBot.getOrCreateTransitChannel(
     }
 }
 
-suspend fun AutoHuntBot.newNumberedWithSchemeName(guild: Guild, transitChannelNameStrategy: NamingStrategy): String {
+suspend fun AutoVoiceFunnelsBot.newNumberedWithSchemeName(guild: Guild, transitChannelNameStrategy: NamingStrategy): String {
     val numberedWithScheme = transitChannelNameStrategy as NumberedWithScheme
     return numberedWithScheme.scheme.replace("%%", (transitChannels.size +1).toString())
 }
 
 
-internal suspend fun AutoHuntBot.getOrCreateTemporaryChannel(
+internal suspend fun AutoVoiceFunnelsBot.getOrCreateTemporaryChannel(
     guild: Guild, userId: Long, voiceFunnel: VoiceFunnel
 ): VoiceChannel? {
     val voiceFunnelSimpleOutput =
@@ -252,14 +252,14 @@ internal suspend fun AutoHuntBot.getOrCreateTemporaryChannel(
     }
 }
 
-internal suspend fun AutoHuntBot.newTempChannelFrakturedName(guild: Guild): String {
+internal suspend fun AutoVoiceFunnelsBot.newTempChannelFrakturedName(guild: Guild): String {
     val usedNames = guild.channels.filterIsInstance<VoiceChannel>().filter {
         it.id in tempChannels.map { chan -> chan.id }
     }.map { it.name }.toSet()
     return frakturedStates.minus(usedNames).random()
 }
 
-internal suspend fun AutoHuntBot.createEntryChannelsAndCategories(event: ReadyEvent) {
+internal suspend fun AutoVoiceFunnelsBot.createEntryChannelsAndCategories(event: ReadyEvent) {
     logger.debug { "Guilds ${event.guildIds}" }
     event.guilds.forEach { guild ->
         funnelsGroups.forEach { entryCategory ->
@@ -297,5 +297,5 @@ internal suspend fun AutoHuntBot.createEntryChannelsAndCategories(event: ReadyEv
             }
         }
     }
-    writeConfig(autoHuntState)
+    writeConfig(autoVoiceFunnelsState)
 }

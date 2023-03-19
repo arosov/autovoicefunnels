@@ -1,4 +1,4 @@
-package dev.autohunt
+package dev.autovoicefunnels
 
 import dev.kord.common.entity.Snowflake
 import kotlinx.coroutines.Dispatchers

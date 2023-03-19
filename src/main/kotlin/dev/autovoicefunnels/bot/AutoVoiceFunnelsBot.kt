@@ -1,10 +1,10 @@
-package dev.autohunt.bot
+package dev.autovoicefunnels.bot
 
-import dev.autohunt.AutoHunt.BuildConfig.DISCORD_TOKEN
-import dev.autohunt.ConfigData
-import dev.autohunt.exceptionHandler
-import dev.autohunt.models.EntryChannelsGroup
-import dev.autohunt.readConfig
+import dev.autovoicefunnels.AutoVoiceFunnels.BuildConfig.DISCORD_TOKEN
+import dev.autovoicefunnels.ConfigData
+import dev.autovoicefunnels.exceptionHandler
+import dev.autovoicefunnels.models.EntryChannelsGroup
+import dev.autovoicefunnels.readConfig
 import dev.kord.common.entity.Snowflake
 import dev.kord.core.Kord
 import dev.kord.core.behavior.GuildBehavior
@@ -33,7 +33,7 @@ data class TransitCategory(val id: Snowflake, val funnelEntryChannelName: String
 
 internal val coroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default + exceptionHandler)
 
-class AutoHuntBot(internal val funnelsGroups: List<EntryChannelsGroup>) {
+class AutoVoiceFunnelsBot(internal val funnelsGroups: List<EntryChannelsGroup>) {
     internal lateinit var bot: Kord
 
     private val blacklistCommandName = "blacklist"
@@ -49,12 +49,12 @@ class AutoHuntBot(internal val funnelsGroups: List<EntryChannelsGroup>) {
 
     internal val transitJobs = mutableMapOf<Snowflake, Job>()
 
-    private val DEV_CLEANUP = false
-    internal lateinit var autoHuntState: ConfigData
+    private val DEV_CLEANUP = true
+    internal lateinit var autoVoiceFunnelsState: ConfigData
 
     suspend fun start() {
         bot = Kord(DISCORD_TOKEN)
-        autoHuntState = readConfig()
+        autoVoiceFunnelsState = readConfig()
         bot.on<ReadyEvent> {
             logger.debug { "Ready" }
             if (DEV_CLEANUP) cleanupOnStartDevMode(this)

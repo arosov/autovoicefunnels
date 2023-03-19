@@ -8,7 +8,7 @@ plugins {
     id("com.palantir.git-version") version ("0.15.0")
 }
 
-group = "dev.autohunt"
+group = "dev.autovoicefunnels"
 val gitVersion: groovy.lang.Closure<String> by extra
 version = gitVersion()
 sourceSets.main {
@@ -33,7 +33,7 @@ dependencies {
 }
 
 application {
-    mainClass.set("dev.autohunt.MainKt")
+    mainClass.set("dev.autovoicefunnels.MainKt")
 }
 
 // https://docs.gradle.org/current/userguide/working_with_files.html#sec:creating_uber_jar_example
@@ -47,7 +47,7 @@ tasks.register<Jar>("uberJar") {
         configurations.runtimeClasspath.get().filter { it.name.endsWith("jar") }.map { zipTree(it) }
     })
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
-    manifest.attributes["Main-Class"] = "MainKt"
+    manifest.attributes["Main-Class"] = application.mainClass
 }
 
 tasks.test {

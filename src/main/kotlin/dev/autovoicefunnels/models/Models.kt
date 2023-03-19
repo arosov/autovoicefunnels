@@ -1,6 +1,4 @@
-package dev.autohunt.models
-
-import java.util.*
+package dev.autovoicefunnels.models
 
 interface NamingStrategy
 class RandomizedFrakturedNames : NamingStrategy

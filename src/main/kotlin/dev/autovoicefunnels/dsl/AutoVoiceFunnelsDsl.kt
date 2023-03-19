@@ -1,10 +1,10 @@
-package dev.autohunt.dsl
+package dev.autovoicefunnels.dsl
 
-import dev.autohunt.bot.AutoHuntBot
-import dev.autohunt.models.*
+import dev.autovoicefunnels.bot.AutoVoiceFunnelsBot
+import dev.autovoicefunnels.models.*
 
 @DslMarker
-annotation class AutoHuntDsl
+annotation class AutoVoiceFunnelsDsl
 
 data class FunnelDefaults(val disableBlacklist: Boolean? = null, val disableFillUp: Boolean? = null)
 data class TransitDefaults(val transitCategoryName: String?, val transitChannelNamingStrategy: NamingStrategy?, val secondsBeforeMoveToOutput: Long?)
@@ -13,10 +13,10 @@ data class OutputDefaults(
 )
 
 class FunnelDefaultsBuilder {
-    @AutoHuntDsl
+    @AutoVoiceFunnelsDsl
     var disableBlacklist: Boolean = true
 
-    @AutoHuntDsl
+    @AutoVoiceFunnelsDsl
     var disableFillUp: Boolean = true
     fun build(): FunnelDefaults {
         return FunnelDefaults(disableBlacklist, disableFillUp)
@@ -24,13 +24,13 @@ class FunnelDefaultsBuilder {
 }
 
 class TransitDefaultsBuilder {
-    @AutoHuntDsl
+    @AutoVoiceFunnelsDsl
     var transitCategoryName: String? = null
 
-    @AutoHuntDsl
+    @AutoVoiceFunnelsDsl
     var transitChannelNamingStrategy: NamingStrategy? = null
 
-    @AutoHuntDsl
+    @AutoVoiceFunnelsDsl
     var secondsBeforeMoveToOutput: Long? = null
 
     fun build(): TransitDefaults {
@@ -39,13 +39,13 @@ class TransitDefaultsBuilder {
 }
 
 class OutputDefaultsBuilder {
-    @AutoHuntDsl
+    @AutoVoiceFunnelsDsl
     var outputCategoryName: String? = null
 
-    @AutoHuntDsl
+    @AutoVoiceFunnelsDsl
     var tempChannelNamingStrategy: NamingStrategy? = null
 
-    @AutoHuntDsl
+    @AutoVoiceFunnelsDsl
     var maxUsers: Int? = null
 
     fun build(): OutputDefaults {
@@ -54,10 +54,10 @@ class OutputDefaultsBuilder {
 }
 
 class OutputBuilder {
-    @AutoHuntDsl
+    @AutoVoiceFunnelsDsl
     var tempChannelNamingStrategy: NamingStrategy? = null
 
-    @AutoHuntDsl
+    @AutoVoiceFunnelsDsl
     var maxUsers: Int? = null
     fun build(): TempChannelGenerator {
         return TempChannelGenerator(tempChannelNamingStrategy!!, maxUsers!!)
@@ -65,13 +65,13 @@ class OutputBuilder {
 }
 
 class TransitBuilder {
-    @AutoHuntDsl
+    @AutoVoiceFunnelsDsl
     lateinit var transitCategoryName: String
 
-    @AutoHuntDsl
+    @AutoVoiceFunnelsDsl
     var transitChannelNamingStrategy: NamingStrategy? = null
 
-    @AutoHuntDsl
+    @AutoVoiceFunnelsDsl
     var secondsBeforeMoveToOutput: Long? = null
 
     fun build(): FunnelTransit {
@@ -80,13 +80,13 @@ class TransitBuilder {
 }
 
 class FunnelBuilder() {
-    @AutoHuntDsl
+    @AutoVoiceFunnelsDsl
     var disableBlacklist: Boolean? = true
 
-    @AutoHuntDsl
+    @AutoVoiceFunnelsDsl
     var disableFillUp: Boolean? = true
 
-    @AutoHuntDsl
+    @AutoVoiceFunnelsDsl
     var tag: String? = null
 
     lateinit var entryChannelName: String
@@ -97,7 +97,7 @@ class FunnelBuilder() {
     var transitDefaults: TransitDefaults? = null
     var outputDefaults: OutputDefaults? = null
 
-    @AutoHuntDsl
+    @AutoVoiceFunnelsDsl
     fun output(
         outputCategoryName: String, setup: OutputBuilder.() -> Unit = {}
     ) {
@@ -112,13 +112,13 @@ class FunnelBuilder() {
         voiceFunnelOutput = SimpleFunnelOutput(outputCategoryName, tmpChanBuilder.build())
     }
 
-    @AutoHuntDsl
+    @AutoVoiceFunnelsDsl
     fun outputFromFunnels(vararg funnelTags: String) {
         val funnelIds = funnelTags.toList()
         voiceFunnelOutput = AggregatedFunnelOutput(funnelIds)
     }
 
-    @AutoHuntDsl
+    @AutoVoiceFunnelsDsl
     fun transit(transitCategoryName: String, setup: TransitBuilder.() -> Unit) {
         val transitBuilder = TransitBuilder()
         transitBuilder.setup()
@@ -153,7 +153,7 @@ class EntryChannelsGroupBuilder(private val entryCategoryName: String) {
     private var transitDefaults: TransitDefaults? = null
     private var outputDefaults: OutputDefaults? = null
 
-    @AutoHuntDsl
+    @AutoVoiceFunnelsDsl
     fun funnel(entryChannelName: String, setup: FunnelBuilder.() -> Unit = {}) {
         val builder = FunnelBuilder()
         builder.entryChannelName = entryChannelName
@@ -169,21 +169,21 @@ class EntryChannelsGroupBuilder(private val entryCategoryName: String) {
         funnels += builder.build()
     }
 
-    @AutoHuntDsl
+    @AutoVoiceFunnelsDsl
     fun funnelDefaults(setup: FunnelDefaultsBuilder.() -> Unit) {
         val builder = FunnelDefaultsBuilder()
         builder.setup()
         funnelDefaults = builder.build()
     }
 
-    @AutoHuntDsl
+    @AutoVoiceFunnelsDsl
     fun transitDefaults(setup: TransitDefaultsBuilder.() -> Unit) {
         val builder = TransitDefaultsBuilder()
         builder.setup()
         transitDefaults = builder.build()
     }
 
-    @AutoHuntDsl
+    @AutoVoiceFunnelsDsl
     fun outputDefaults(setup: OutputDefaultsBuilder.() -> Unit) {
         val builder = OutputDefaultsBuilder()
         builder.setup()
@@ -196,24 +196,24 @@ class EntryChannelsGroupBuilder(private val entryCategoryName: String) {
 }
 
 
-class AutoHuntBuilder {
+class AutoVoiceFunnelsBuilder {
     private val entryChannelsGroups = mutableListOf<EntryChannelsGroup>()
 
-    @AutoHuntDsl
+    @AutoVoiceFunnelsDsl
     fun funnels(entryCategoryName: String, setup: EntryChannelsGroupBuilder.() -> Unit) {
         val entryChannelsGroupBuilder = EntryChannelsGroupBuilder(entryCategoryName)
         entryChannelsGroupBuilder.setup()
         entryChannelsGroups += entryChannelsGroupBuilder.build()
     }
 
-    fun build(): AutoHuntBot {
-        return AutoHuntBot(entryChannelsGroups)
+    fun build(): AutoVoiceFunnelsBot {
+        return AutoVoiceFunnelsBot(entryChannelsGroups)
     }
 }
 
-@AutoHuntDsl
-fun autoHunt(setup: AutoHuntBuilder.() -> Unit): AutoHuntBot {
-    val autoHuntBuilder = AutoHuntBuilder()
-    autoHuntBuilder.setup()
-    return autoHuntBuilder.build()
+@AutoVoiceFunnelsDsl
+fun autoVoiceFunnels(setup: AutoVoiceFunnelsBuilder.() -> Unit): AutoVoiceFunnelsBot {
+    val autoVoiceFunnelsBuilder = AutoVoiceFunnelsBuilder()
+    autoVoiceFunnelsBuilder.setup()
+    return autoVoiceFunnelsBuilder.build()
 }

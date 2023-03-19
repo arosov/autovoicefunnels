@@ -1,11 +1,8 @@
-package dev.autohunt
+package dev.autovoicefunnels
 
-import dev.autohunt.dsl.autoHunt
-import dev.autohunt.models.NumberedWithScheme
-import dev.autohunt.models.RandomizedFrakturedNames
-import dev.autohunt.readConfig
-import dev.autohunt.writeConfig
-import dev.kord.common.entity.Snowflake
+import dev.autovoicefunnels.dsl.autoVoiceFunnels
+import dev.autovoicefunnels.models.NumberedWithScheme
+import dev.autovoicefunnels.models.RandomizedFrakturedNames
 import kotlinx.coroutines.*
 import mu.KotlinLogging
 
@@ -18,7 +15,7 @@ val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
 private val coroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO + exceptionHandler)
 
 suspend fun main() {
-    val bot = autoHunt {
+    val bot = autoVoiceFunnels {
         // 1 entry channel, 1 transit zone, 1 output but user limit for moving out of transit is 3
         funnels(entryCategoryName = "funnel group I") {
             funnel(entryChannelName = "entry channel I") {
