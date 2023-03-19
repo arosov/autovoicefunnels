@@ -1,20 +1,35 @@
 package dev.autohunt.models
 
+import java.util.*
+
 interface NamingStrategy
 class RandomizedFrakturedNames : NamingStrategy
 class UsernameBased : NamingStrategy
+data class NumberedWithScheme(val scheme: String) : NamingStrategy
+
 data class TempChannelGenerator(val nameStrategy: NamingStrategy, val maxUsers: Int)
-data class SimpleFunnelOutput(val categoryName: String, val tempChannelGenerator: TempChannelGenerator) :
-        VoiceFunnelOutput
+
+interface VoiceFunnelOutput
+data class SimpleFunnelOutput(
+    val categoryName: String,
+    val tempChannelGenerator: TempChannelGenerator
+) : VoiceFunnelOutput
 
 data class AggregatedFunnelOutput(val funnelIds: List<String>) : VoiceFunnelOutput
-interface VoiceFunnelOutput
+
+data class FunnelTransit(
+    val transitCategoryName: String,
+    val transitChannelNameStrategy: NamingStrategy,
+    val timeBeforeMoveToOutput: Long
+)
+
 data class VoiceFunnel(
-    val id: String,
     val entryChannelName: String,
+    val funnelTransit: FunnelTransit?,
     val voiceFunnelOutput: VoiceFunnelOutput,
-    val disableBlacklist: Boolean = false,
-    val disableFillUp: Boolean = false
+    val disableBlacklist: Boolean,
+    val disableFillUp: Boolean,
+    val tag: String? = null
 )
 
 data class EntryChannelsGroup(val groupName: String, val entryChannelsGroup: List<VoiceFunnel>)

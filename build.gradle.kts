@@ -3,6 +3,7 @@ import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 plugins {
     application
     kotlin("jvm") version "1.8.10"
+    kotlin("plugin.serialization") version("1.6.10")
     id("com.github.gmazzo.buildconfig") version ("3.1.0")
     id("com.palantir.git-version") version ("0.15.0")
 }

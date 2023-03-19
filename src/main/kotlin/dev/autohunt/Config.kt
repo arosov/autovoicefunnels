@@ -1,5 +1,6 @@
 package dev.autohunt
 
+import dev.kord.common.entity.Snowflake
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
@@ -11,7 +12,7 @@ import java.io.File
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import kotlin.concurrent.withLock
 
-private val configPath = "config.json"
+private val configPath = "state.json"
 private val logger = KotlinLogging.logger {}
 private val prettyJson = Json {
     prettyPrint = true
@@ -25,7 +26,8 @@ private val reentrantReadWriteLockConfigFile = ReentrantReadWriteLock()
 
 @Serializable
 data class ConfigData(
-    var notReallyused: Boolean? = false,
+    // guildid -> (channel/category name from DSL , snowflake of that from previous run)
+    var snowflakeMap: MutableMap<Snowflake, MutableList<Pair<String, Snowflake>>> = mutableMapOf()
 )
 
 suspend fun readConfig(path: String = configPath): ConfigData {
