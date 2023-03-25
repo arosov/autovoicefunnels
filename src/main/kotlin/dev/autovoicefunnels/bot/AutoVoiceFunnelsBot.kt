@@ -27,8 +27,8 @@ private val logger = KotlinLogging.logger { }
 
 data class EntryChannel(val id: Snowflake, val idCategory: Snowflake, val funnelEntryChannelName: String)
 data class TempChannel(val id: Snowflake, val idCategory: Snowflake, val funnelEntryChannelName: String)
-data class TempChannelCategory(val id: Snowflake, val funnelEntryChannelName: String)
 data class TransitChannel(val id: Snowflake, val idCategory: Snowflake, val funnelEntryChannelName: String)
+data class TempChannelCategory(val id: Snowflake, val funnelEntryChannelName: String)
 data class TransitCategory(val id: Snowflake, val funnelEntryChannelName: String)
 
 internal val coroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default + exceptionHandler)

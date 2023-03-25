@@ -6,10 +6,22 @@ import dev.autovoicefunnels.models.*
 @DslMarker
 annotation class AutoVoiceFunnelsDsl
 
-data class FunnelDefaults(val disableBlacklist: Boolean? = null, val disableFillUp: Boolean? = null)
-data class TransitDefaults(val transitCategoryName: String?, val transitChannelNamingStrategy: NamingStrategy?, val secondsBeforeMoveToOutput: Long?)
+data class FunnelDefaults(
+    val disableBlacklist: Boolean? = null,
+    val disableFillUp: Boolean? = null,
+    val rolesVisibility: Pair<List<String>?, List<String>?>,
+    val noTextForRoles: List<String>?,
+    val noTextNoVocalForRoles: List<String>?
+)
+
+data class TransitDefaults(
+    val transitCategoryName: String?,
+    val transitChannelNamingStrategy: NamingStrategy?,
+    val secondsBeforeMoveToOutput: Long?
+)
+
 data class OutputDefaults(
-    val outputCategoryName: String?, val tempChannelNamingStrategy: NamingStrategy?,val maxUsers: Int?
+    val outputCategoryName: String?, val tempChannelNamingStrategy: NamingStrategy?, val maxUsers: Int?
 )
 
 class FunnelDefaultsBuilder {
@@ -18,8 +30,40 @@ class FunnelDefaultsBuilder {
 
     @AutoVoiceFunnelsDsl
     var disableFillUp: Boolean = true
+
+    private var visibleForRoles: List<String>? = null
+    private var notVisibleForRoles: List<String>? = null
+    private var noTextForRoles: List<String>? = null
+    private var noTextNoVoiceForRoles: List<String>? = null
+
+    @AutoVoiceFunnelsDsl
+    fun visibleForRoles(vararg roles: String) {
+        visibleForRoles = roles.toList()
+    }
+
+    @AutoVoiceFunnelsDsl
+    fun notVisibleForRoles(vararg roles: String) {
+        notVisibleForRoles = roles.toList()
+    }
+
+    @AutoVoiceFunnelsDsl
+    fun noTextForRoles(vararg roles: String) {
+        noTextForRoles = roles.toList()
+    }
+
+    @AutoVoiceFunnelsDsl
+    fun noTextNoVoiceForRoles(vararg roles: String) {
+        noTextNoVoiceForRoles = roles.toList()
+    }
+
     fun build(): FunnelDefaults {
-        return FunnelDefaults(disableBlacklist, disableFillUp)
+        return FunnelDefaults(
+            disableBlacklist,
+            disableFillUp,
+            Pair(visibleForRoles, notVisibleForRoles),
+            noTextForRoles,
+            noTextNoVoiceForRoles
+        )
     }
 }
 
@@ -75,11 +119,20 @@ class TransitBuilder {
     var secondsBeforeMoveToOutput: Long? = null
 
     fun build(): FunnelTransit {
-        return FunnelTransit(transitCategoryName!!, transitChannelNamingStrategy!!, secondsBeforeMoveToOutput!!)
+        return FunnelTransit(transitCategoryName, transitChannelNamingStrategy!!, secondsBeforeMoveToOutput!!)
     }
 }
 
-class FunnelBuilder() {
+class FunnelBuilder {
+    @AutoVoiceFunnelsDsl
+    var rolesVisibility: Pair<List<String>?, List<String>?>? = null
+
+    @AutoVoiceFunnelsDsl
+    var noTextForRoles: List<String>? = null
+
+    @AutoVoiceFunnelsDsl
+    var noTextNoVocalForRoles: List<String>? = null
+
     @AutoVoiceFunnelsDsl
     var disableBlacklist: Boolean? = true
 
@@ -134,14 +187,29 @@ class FunnelBuilder() {
 
     fun build(): VoiceFunnel {
         transitDefaults?.transitCategoryName?.let {
-            funnelTransit = FunnelTransit(it, transitDefaults?.transitChannelNamingStrategy!!, transitDefaults?.secondsBeforeMoveToOutput!!)
+            funnelTransit = FunnelTransit(
+                it,
+                transitDefaults?.transitChannelNamingStrategy!!,
+                transitDefaults?.secondsBeforeMoveToOutput!!
+            )
         }
         // This crashes if no default nor specific output is specified
         outputDefaults?.outputCategoryName?.let {
-            voiceFunnelOutput = SimpleFunnelOutput(outputDefaults?.outputCategoryName!!, TempChannelGenerator(outputDefaults?.tempChannelNamingStrategy!!, outputDefaults?.maxUsers!!))
+            voiceFunnelOutput = SimpleFunnelOutput(
+                outputDefaults?.outputCategoryName!!,
+                TempChannelGenerator(outputDefaults?.tempChannelNamingStrategy!!, outputDefaults?.maxUsers!!)
+            )
         }
         return VoiceFunnel(
-            entryChannelName, funnelTransit, voiceFunnelOutput!!, disableBlacklist!!, disableFillUp!!, tag
+            entryChannelName,
+            funnelTransit,
+            voiceFunnelOutput!!,
+            disableBlacklist!!,
+            disableFillUp!!,
+            tag,
+            rolesVisibility,
+            noTextForRoles,
+            noTextNoVocalForRoles
         )
     }
 }
@@ -166,8 +234,18 @@ class EntryChannelsGroupBuilder(private val entryCategoryName: String) {
         funnelDefaults?.disableFillUp?.let {
             builder.disableFillUp = builder.disableFillUp ?: it
         }
+        funnelDefaults?.rolesVisibility?.let {
+            builder.rolesVisibility = builder.rolesVisibility ?: it
+        }
+        funnelDefaults?.noTextForRoles?.let {
+            builder.noTextForRoles = builder.noTextForRoles ?: it
+        }
+        funnelDefaults?.noTextNoVocalForRoles?.let {
+            builder.noTextNoVocalForRoles = builder.noTextNoVocalForRoles ?: it
+        }
         funnels += builder.build()
     }
+
 
     @AutoVoiceFunnelsDsl
     fun funnelDefaults(setup: FunnelDefaultsBuilder.() -> Unit) {
