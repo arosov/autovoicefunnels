@@ -49,7 +49,7 @@ class AutoVoiceFunnelsBot(internal val funnelsGroups: List<EntryChannelsGroup>) 
 
     internal val transitJobs = mutableMapOf<Snowflake, Job>()
 
-    private val DEV_CLEANUP = true
+    private val DEV_CLEANUP = false
     internal lateinit var autoVoiceFunnelsState: ConfigData
 
     suspend fun start() {
