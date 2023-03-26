@@ -17,10 +17,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.flow.filterIsInstance
-import kotlinx.coroutines.flow.filterNot
-import kotlinx.coroutines.flow.firstOrNull
-import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.flow.*
 import mu.KotlinLogging
 
 private val logger = KotlinLogging.logger { }
@@ -50,6 +47,7 @@ class AutoVoiceFunnelsBot(internal val funnelsGroups: List<EntryChannelsGroup>) 
     internal val transitJobs = mutableMapOf<Snowflake, Job>()
 
     private val DEV_CLEANUP = false
+    private val CLEAN_PREVIOUSLY_CREATED_IDS = true
     internal lateinit var autoVoiceFunnelsState: ConfigData
 
     suspend fun start() {
@@ -58,6 +56,7 @@ class AutoVoiceFunnelsBot(internal val funnelsGroups: List<EntryChannelsGroup>) 
         bot.on<ReadyEvent> {
             logger.debug { "Ready" }
             if (DEV_CLEANUP) cleanupOnStartDevMode(this)
+            if (CLEAN_PREVIOUSLY_CREATED_IDS) cleanPreviouslyCreatedIds(this)
             createEntryChannelsAndCategories(this)
         }
         bot.on<VoiceStateUpdateEvent> {
@@ -82,6 +81,18 @@ class AutoVoiceFunnelsBot(internal val funnelsGroups: List<EntryChannelsGroup>) 
         //    bot.createGuildUserCommand(it.id, blacklistStatusCommandName)
         //}
         bot.login()
+    }
+
+    private suspend fun cleanPreviouslyCreatedIds(readyEvent: ReadyEvent) {
+        autoVoiceFunnelsState.snowflakeMap.forEach { (_, listResources) ->
+            listResources.forEach {(name, id) ->
+                readyEvent.guilds.toList().forEach { guild ->
+                    guild.channels.toList().firstOrNull { it.id == id }?.delete()
+                    //guild.channels.filterIsInstance<Category>().firstOrNull {  }
+                }
+            }
+
+        }
     }
 
     private suspend fun cleanupOnStartDevMode(event: ReadyEvent) {
@@ -128,7 +139,7 @@ class AutoVoiceFunnelsBot(internal val funnelsGroups: List<EntryChannelsGroup>) 
     }
 
     internal suspend fun deleteVocalsUnderCategory(guild: GuildBehavior, snowflake: Snowflake) {
-        val categoryKord = guild.channels.filterIsInstance<Category>().firstOrNull { it.id == snowflake}
+        val categoryKord = guild.channels.filterIsInstance<Category>().firstOrNull { it.id == snowflake }
         categoryKord?.channels?.toList()?.forEach {
             it.delete()
         }
