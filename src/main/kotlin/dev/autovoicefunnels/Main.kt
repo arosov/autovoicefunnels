@@ -449,6 +449,8 @@ suspend fun main() {
         coroutineScope.launch {
             botToStart.start()
         }.join()
+        logger.warn { "Delay 10s before try starting again" }
+        delay(10000)
     }
 }
 
