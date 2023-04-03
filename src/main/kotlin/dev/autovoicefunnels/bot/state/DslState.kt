@@ -1,5 +1,6 @@
-package dev.autovoicefunnels
+package dev.autovoicefunnels.bot.state
 
+import dev.autovoicefunnels.models.EntryChannelsGroup
 import dev.kord.common.entity.Snowflake
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -12,7 +13,7 @@ import java.io.File
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import kotlin.concurrent.withLock
 
-private val configPath = "state.json"
+private val configPath = "dslstate.json"
 private val logger = KotlinLogging.logger {}
 private val prettyJson = Json {
     prettyPrint = true
@@ -21,28 +22,29 @@ private val prettyJson = Json {
 }
 
 @Volatile
-private lateinit var currentConfig: ConfigData
+private lateinit var currentConfig: DslState
 private val reentrantReadWriteLockConfigFile = ReentrantReadWriteLock()
 
+
 @Serializable
-data class ConfigData(
-    // guildid -> (channel/category name from DSL , snowflake of that from previous run)
-    var snowflakeMap: MutableMap<Snowflake, MutableList<Pair<String, Snowflake>>> = mutableMapOf()
+data class DslState(
+    var entryChannelGroups: List<EntryChannelsGroup> = mutableListOf()
 )
 
-suspend fun readConfig(path: String = configPath): ConfigData {
+suspend fun readDslState(path: String = configPath): DslState {
     return withContext(Dispatchers.IO) {
-        reentrantReadWriteLockConfigFile.readLock().withLock<ConfigData> {
+        reentrantReadWriteLockConfigFile.readLock().withLock<DslState> {
             currentConfig = when (!File(path).exists()) {
-                true -> ConfigData()
-                false -> prettyJson.decodeFromString<ConfigData>(File(path).readText())
+                true -> DslState()
+                false -> prettyJson.decodeFromString<DslState>(File(path).readText())
             }
             currentConfig
         }
     }
 }
 
-suspend fun writeConfig(conf: ConfigData, path: String = configPath) {
+suspend fun DslState.writeDslState(path: String = configPath) {
+    val conf = this
     withContext(Dispatchers.IO) {
         reentrantReadWriteLockConfigFile.writeLock().withLock {
             val json = prettyJson.encodeToString(conf)
@@ -51,4 +53,7 @@ suspend fun writeConfig(conf: ConfigData, path: String = configPath) {
             currentConfig = conf
         }
     }
+}
+internal fun DslState.deleteFile() {
+    File(configPath).delete()
 }

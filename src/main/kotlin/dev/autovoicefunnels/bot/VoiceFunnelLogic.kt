@@ -1,8 +1,10 @@
 package dev.autovoicefunnels.bot
 
+import dev.autovoicefunnels.bot.state.addCategoryToState
+import dev.autovoicefunnels.bot.state.addChannelToState
+import dev.autovoicefunnels.bot.state.write
 import dev.autovoicefunnels.frakturedChannelNames
 import dev.autovoicefunnels.models.*
-import dev.autovoicefunnels.writeConfig
 import dev.kord.common.entity.*
 import dev.kord.core.behavior.*
 import dev.kord.core.behavior.channel.edit
@@ -35,7 +37,7 @@ internal suspend fun AutoVoiceFunnelsBot.autoManageUserInEntryChannel(event: Voi
     val userId = event.state.userId.value.toLong()
     when {
         funnel.voiceFunnelOutput is SimpleFunnelOutput && funnel.funnelTransit == null -> {
-            val category = getOrCreateCategory(guild, funnel.voiceFunnelOutput.categoryName, funnel.rolesVisibility, funnel.noTextForRoles, funnel.noTextNoVoiceForRoles)
+            val category = getOrCreateCategory(guild, funnel.voiceFunnelOutput.categoryName, funnel.roles)
             if (tempChannelCategories.find { it.funnelEntryChannelName == funnel.entryChannelName } == null) {
                 tempChannelCategories.add(TempChannelCategory(category.id, funnel.entryChannelName))
             }
@@ -46,7 +48,7 @@ internal suspend fun AutoVoiceFunnelsBot.autoManageUserInEntryChannel(event: Voi
         }
 
         funnel.voiceFunnelOutput is SimpleFunnelOutput && funnel.funnelTransit != null -> {
-            val category = getOrCreateCategory(guild, funnel.funnelTransit.transitCategoryName, funnel.rolesVisibility, funnel.noTextForRoles, funnel.noTextNoVoiceForRoles)
+            val category = getOrCreateCategory(guild, funnel.funnelTransit.transitCategoryName, funnel.roles)
             if (transitCategories.find { it.funnelEntryChannelName == funnel.entryChannelName } == null) {
                 transitCategories.add(TransitCategory(category.id, funnel.entryChannelName))
             }
@@ -85,18 +87,23 @@ internal suspend fun AutoVoiceFunnelsBot.autoMoveFromTransitChannels(voiceStateU
     val transitChannel = transitChannels.find { voiceStateUpdateEvent.state.channelId == it.id } ?: return
     val funnel = findFunnel(transitChannel.funnelEntryChannelName) ?: return
     val funnelOutput = funnel.voiceFunnelOutput as SimpleFunnelOutput
-    if (guild.getChannelOf<VoiceChannel>(transitChanId).voiceStates.toList().size < funnelOutput.tempChannelGenerator.maxUsers) {
-        logger.info { "Transit move timer not started: below maxusers threshold" }
+    val currentChannelOccupation = try {
+        guild.getChannelOf<VoiceChannel>(transitChanId).voiceStates.toList().size
+    } catch (e: EntityNotFoundException) {
+        -1
+    }
+    if ( currentChannelOccupation < funnelOutput.tempChannelGenerator.maxUsers) {
+        logger.info { "Transit move timer not started: below maxusers threshold $currentChannelOccupation" }
         return
     }
     val delayValue = funnel.funnelTransit?.timeBeforeMoveToOutput!!
-    val targetIdCategory = getOrCreateCategory(guild, funnelOutput.categoryName, funnel.rolesVisibility, funnel.noTextForRoles, funnel.noTextNoVoiceForRoles).id
+    val targetCategory = getOrCreateCategory(guild, funnelOutput.categoryName, funnel.roles)
     transitJobs[transitChanId]?.cancel()
     transitJobs[transitChanId] = coroutineScope.launch {
         logger.info { "Transit move timer starting delay $delayValue seconds" }
         delay(delayValue * 1000L)
         try {
-            if (guild.getChannelOf<VoiceChannel>(transitChanId).voiceStates.toList().size < funnelOutput.tempChannelGenerator.maxUsers){
+            if (guild.getChannelOf<VoiceChannel>(transitChanId).voiceStates.toList().size < funnelOutput.tempChannelGenerator.maxUsers) {
                 logger.info { "Transit move canceled: below maxusers threshold after delay" }
                 return@launch
             }
@@ -105,7 +112,7 @@ internal suspend fun AutoVoiceFunnelsBot.autoMoveFromTransitChannels(voiceStateU
         }
         guild.channels.filterIsInstance<VoiceChannel>().firstOrNull { it.id == transitChanId }?.let {
             it.edit {
-                parentId = targetIdCategory
+                parentId = targetCategory.id
                 name = newTempChannelFrakturedName(guild)
             }
             transitChannels.removeIf { it.id == transitChanId }
@@ -121,78 +128,60 @@ internal suspend fun AutoVoiceFunnelsBot.autoMoveFromTransitChannels(voiceStateU
 internal suspend fun AutoVoiceFunnelsBot.createEntryChannelIfNotExisting(
     guild: GuildBehavior, categoryName: String, voiceFunnel: VoiceFunnel
 ): Snowflake {
-    val guildChannels = guild.channels.filterIsInstance<VoiceChannel>().toList()
-    val category = getOrCreateCategory(guild, categoryName, voiceFunnel.rolesVisibility, voiceFunnel.noTextForRoles, voiceFunnel.noTextNoVoiceForRoles)
-    autoVoiceFunnelsState.snowflakeMap[guild.id]?.find { (dslname, _) -> categoryName+dslname == voiceFunnel.entryChannelName }
-        ?.let { (_, snowflake) ->
-            guildChannels.firstOrNull { it.id == snowflake }?.let {
-                return snowflake
+    val guildVoiceChannels = guild.channels.filterIsInstance<VoiceChannel>().toList()
+    val category = getOrCreateCategory(guild, categoryName, voiceFunnel.roles)
+    autoVoiceFunnelsState.guilds.find { it.guildId == guild.id }?.categories?.find { it.categoryDslName == categoryName }?.channels?.find { (channelName, _) -> channelName == voiceFunnel.entryChannelName }
+        ?.let { (_, channelId) ->
+            guildVoiceChannels.firstOrNull { it.id == channelId }?.let {
+                return channelId
             }
         }
-    val channel = guildChannels.find { it.name == voiceFunnel.entryChannelName }
-        ?: guild.createVoiceChannel(voiceFunnel.entryChannelName) {
-            parentId = category.id
-            //position = positionEntry
-        }
-    addResourceNameToState(guild.id, categoryName+channel.name, channel.id)
+    val channel = guild.createVoiceChannel(voiceFunnel.entryChannelName) {
+        parentId = category.id
+        //position = positionEntry
+    }
+    autoVoiceFunnelsState.addChannelToState(guild.id, voiceFunnel.entryChannelName, channel.id, category.id)
     return channel.id
-}
-
-internal suspend fun AutoVoiceFunnelsBot.addResourceNameToState(
-    guildId: Snowflake, resourceName: String, resourceId: Snowflake
-) {
-    val pairNameSnowflake = Pair(resourceName, resourceId)
-    if (autoVoiceFunnelsState.snowflakeMap[guildId] == null) autoVoiceFunnelsState.snowflakeMap[guildId] =
-        mutableListOf()
-    if (autoVoiceFunnelsState.snowflakeMap[guildId]?.contains(pairNameSnowflake) == false) autoVoiceFunnelsState.snowflakeMap[guildId]?.add(
-        pairNameSnowflake
-    )
 }
 
 internal suspend fun AutoVoiceFunnelsBot.getOrCreateCategory(
     guild: GuildBehavior,
     categoryName: String,
-    rolesVisibility: Pair<List<String>?, List<String>?>?,
-    noTextForRoles: List<String>?,
-    noTextNoVoiceForRoles: List<String>?
+    roles: Map<Roles, List<String>?>,
 ): TopGuildChannel {
-    autoVoiceFunnelsState.snowflakeMap[guild.id]?.find { (dslName, _) -> dslName == categoryName }
-        ?.let { (_, snowflake) ->
-            guild.channels.filterIsInstance<Category>().firstOrNull { it.id == snowflake }?.let {
+    val guildCategories = guild.channels
+    autoVoiceFunnelsState.guilds.find { it.guildId == guild.id }?.categories?.find { it.categoryDslName == categoryName }
+        ?.let { (_, categoryId) ->
+            guildCategories.firstOrNull { it.id == categoryId }?.let {
+                logger.debug { "Found category in state $it" }
                 return it
             }
         }
 
-    val existingCategory = guild.channels.filterIsInstance<Category>().firstOrNull { it.name == categoryName }
-
-    if (existingCategory != null) {
-        addResourceNameToState(guild.id, categoryName, existingCategory.id)
-        return existingCategory
-    }
-
     val category = guild.createCategory(categoryName) {
-        rolesVisibility?.let { (visibilityRoles, noVisibilityRoles) ->
-            guild.roles.filter { visibilityRoles?.contains(it.name) == true }.toList().forEach { roleWithVisibility ->
-                permissionOverwrites.add(
-                    Overwrite(
-                        id = roleWithVisibility.id,
-                        type = OverwriteType.Role,
-                        allow = Permissions(Permission.ViewChannel),
-                        deny = Permissions()
-                    )
+        val visibilityRoles = roles[Roles.VISIBLE]
+        guild.roles.filter { visibilityRoles?.contains(it.name) == true }.toList().forEach { roleWithVisibility ->
+            permissionOverwrites.add(
+                Overwrite(
+                    id = roleWithVisibility.id,
+                    type = OverwriteType.Role,
+                    allow = Permissions(Permission.ViewChannel),
+                    deny = Permissions()
                 )
-            }
-            guild.roles.filter { noVisibilityRoles?.contains(it.name) == true }.toList().forEach { roleWithVisibility ->
-                permissionOverwrites.add(
-                    Overwrite(
-                        id = roleWithVisibility.id,
-                        type = OverwriteType.Role,
-                        allow = Permissions(),
-                        deny = Permissions(Permission.ViewChannel)
-                    )
-                )
-            }
+            )
         }
+        val noVisibilityRoles = roles[Roles.NOTVISIBLE]
+        guild.roles.filter { noVisibilityRoles?.contains(it.name) == true }.toList().forEach { roleWithVisibility ->
+            permissionOverwrites.add(
+                Overwrite(
+                    id = roleWithVisibility.id,
+                    type = OverwriteType.Role,
+                    allow = Permissions(),
+                    deny = Permissions(Permission.ViewChannel)
+                )
+            )
+        }
+        val noTextForRoles = roles[Roles.NOTEXT]
         guild.roles.filter { noTextForRoles?.contains(it.name) == true }.toList().forEach { roleWithoutText ->
             permissionOverwrites.add(
                 Overwrite(
@@ -203,6 +192,7 @@ internal suspend fun AutoVoiceFunnelsBot.getOrCreateCategory(
                 )
             )
         }
+        val noTextNoVoiceForRoles = roles[Roles.NOTEXTNOVOCAL]
         guild.roles.filter { noTextNoVoiceForRoles?.contains(it.name) == true }.toList()
             .forEach { roleWithoutTextNorVoice ->
                 permissionOverwrites.add(
@@ -215,7 +205,7 @@ internal suspend fun AutoVoiceFunnelsBot.getOrCreateCategory(
                 )
             }
     }
-    addResourceNameToState(guild.id, categoryName, category.id)
+    autoVoiceFunnelsState.addCategoryToState(guild.id, categoryName, category.id)
     return category
 }
 
@@ -314,7 +304,7 @@ internal suspend fun AutoVoiceFunnelsBot.createEntryChannelsAndCategories(event:
         funnelsGroups.forEach { entryCategory ->
             logger.debug { "DSL DEBUG $entryCategory" }
             entryCategory.entryChannelsGroup.forEach { voiceFunnel ->
-                val category = getOrCreateCategory(guild, entryCategory.groupName, voiceFunnel.rolesVisibility, voiceFunnel.noTextForRoles, voiceFunnel.noTextNoVoiceForRoles)
+                val category = getOrCreateCategory(guild, entryCategory.groupName, voiceFunnel.roles)
                 entryChannels.add(
                     EntryChannel(
                         createEntryChannelIfNotExisting(
@@ -328,8 +318,7 @@ internal suspend fun AutoVoiceFunnelsBot.createEntryChannelsAndCategories(event:
             entryCategory.entryChannelsGroup.forEach { voiceFunnel ->
                 voiceFunnel.funnelTransit?.let { funnelTransit ->
                     val transitCategoryKord =
-                        getOrCreateCategory(guild, funnelTransit.transitCategoryName, voiceFunnel.rolesVisibility, voiceFunnel.noTextForRoles, voiceFunnel.noTextNoVoiceForRoles)
-                    deleteVocalsUnderCategory(guild, transitCategoryKord.id)
+                        getOrCreateCategory(guild, funnelTransit.transitCategoryName, voiceFunnel.roles)
                     val transitCategory = TransitCategory(transitCategoryKord.id, voiceFunnel.entryChannelName)
                     if (!transitCategories.contains(transitCategory)) transitCategories.add(transitCategory)
                 }
@@ -338,8 +327,7 @@ internal suspend fun AutoVoiceFunnelsBot.createEntryChannelsAndCategories(event:
         funnelsGroups.forEach { entryCategory ->
             entryCategory.entryChannelsGroup.forEach { voiceFunnel ->
                 val outputCategoryName = (voiceFunnel.voiceFunnelOutput as SimpleFunnelOutput).categoryName
-                val outputcategoryKord = getOrCreateCategory(guild, outputCategoryName, voiceFunnel.rolesVisibility,voiceFunnel.noTextForRoles, voiceFunnel.noTextNoVoiceForRoles)
-                deleteVocalsUnderCategory(guild, outputcategoryKord.id)
+                val outputcategoryKord = getOrCreateCategory(guild, outputCategoryName, voiceFunnel.roles)
                 val tempChannelCategory = TempChannelCategory(outputcategoryKord.id, voiceFunnel.entryChannelName)
                 if (!tempChannelCategories.contains(tempChannelCategory)) tempChannelCategories.add(
                     tempChannelCategory
@@ -347,5 +335,5 @@ internal suspend fun AutoVoiceFunnelsBot.createEntryChannelsAndCategories(event:
             }
         }
     }
-    writeConfig(autoVoiceFunnelsState)
+    autoVoiceFunnelsState.write()
 }

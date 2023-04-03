@@ -207,9 +207,7 @@ class FunnelBuilder {
             disableBlacklist!!,
             disableFillUp!!,
             tag,
-            rolesVisibility,
-            noTextForRoles,
-            noTextNoVocalForRoles
+            mapOf(Roles.VISIBLE to rolesVisibility?.first, Roles.NOTVISIBLE to rolesVisibility?.second, Roles.NOTEXT to noTextForRoles, Roles.NOTEXTNOVOCAL to noTextNoVocalForRoles)
         )
     }
 }

@@ -1,13 +1,14 @@
 package dev.autovoicefunnels.bot
 
 import dev.autovoicefunnels.AutoVoiceFunnels.BuildConfig.DISCORD_TOKEN
-import dev.autovoicefunnels.ConfigData
+import dev.autovoicefunnels.bot.state.*
+import dev.autovoicefunnels.bot.state.reset
 import dev.autovoicefunnels.exceptionHandler
 import dev.autovoicefunnels.models.EntryChannelsGroup
-import dev.autovoicefunnels.readConfig
 import dev.kord.common.entity.Snowflake
 import dev.kord.core.Kord
 import dev.kord.core.behavior.GuildBehavior
+import dev.kord.core.behavior.channel.CategoryBehavior
 import dev.kord.core.entity.channel.Category
 import dev.kord.core.entity.channel.VoiceChannel
 import dev.kord.core.event.gateway.ReadyEvent
@@ -19,6 +20,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.*
 import mu.KotlinLogging
+import kotlin.system.exitProcess
 
 private val logger = KotlinLogging.logger { }
 
@@ -46,25 +48,43 @@ class AutoVoiceFunnelsBot(internal val funnelsGroups: List<EntryChannelsGroup>) 
 
     internal val transitJobs = mutableMapOf<Snowflake, Job>()
 
+    // Only use in dev context
     private val DEV_CLEANUP = false
-    private val CLEAN_PREVIOUSLY_CREATED_IDS = true
-    internal lateinit var autoVoiceFunnelsState: ConfigData
+    // Safe to use for "uninstall / remove bot" purposes. It'll basically remove everything the bot has created
+    private val CLEARALL_AND_DIE = false
+    internal lateinit var autoVoiceFunnelsState: SnowflakesState
 
     suspend fun start() {
         bot = Kord(DISCORD_TOKEN)
-        autoVoiceFunnelsState = readConfig()
+        autoVoiceFunnelsState = readSnowflakesState()
+        val savedDslState = readDslState()
+        val hasDslChanged = savedDslState.entryChannelGroups != funnelsGroups
+        if (hasDslChanged) {
+            savedDslState.entryChannelGroups = funnelsGroups
+            savedDslState.writeDslState()
+        }
         bot.on<ReadyEvent> {
-            logger.debug { "Ready" }
+            logger.debug { "Ready: DSL changed $hasDslChanged" }
             if (DEV_CLEANUP) cleanupOnStartDevMode(this)
-            if (CLEAN_PREVIOUSLY_CREATED_IDS) cleanPreviouslyCreatedIds(this)
+            if (hasDslChanged || CLEARALL_AND_DIE) {
+                cleanPreviouslyCreatedIds(this)
+                autoVoiceFunnelsState.reset()
+                if (CLEARALL_AND_DIE) {
+                    autoVoiceFunnelsState.deleteFile()
+                    savedDslState.deleteFile()
+                    exitProcess(1)
+                }
+            }
             createEntryChannelsAndCategories(this)
         }
         bot.on<VoiceStateUpdateEvent> {
+            logger.debug { "VoiceStateUpdateEvent $this" }
             autoManageUserInEntryChannel(this)
-            tempChannelCleanup(this)
             autoMoveFromTransitChannels(this)
-            logger.debug { "entrychannels $tempChannels" }
+            tempChannelCleanup(this)
+            logger.debug { "entrychannels $entryChannels" }
             logger.debug { "tempChannels $tempChannels" }
+            logger.debug { "transitChannels $transitChannels" }
             logger.debug { "categorytempChannels $tempChannelCategories" }
             logger.debug { "funnelsGroups $funnelsGroups" }
         }
@@ -84,14 +104,23 @@ class AutoVoiceFunnelsBot(internal val funnelsGroups: List<EntryChannelsGroup>) 
     }
 
     private suspend fun cleanPreviouslyCreatedIds(readyEvent: ReadyEvent) {
-        autoVoiceFunnelsState.snowflakeMap.forEach { (_, listResources) ->
-            listResources.forEach {(name, id) ->
-                readyEvent.guilds.toList().forEach { guild ->
-                    guild.channels.toList().firstOrNull { it.id == id }?.delete()
-                    //guild.channels.filterIsInstance<Category>().firstOrNull {  }
+        autoVoiceFunnelsState.guilds.forEach { (guildId, categories) ->
+            categories.forEach {(name, categoryId, channels) ->
+                channels.forEach {channel ->
+                    readyEvent.guilds.find { it.id == guildId }?.let { guild ->
+                        guild.channels.firstOrNull { channel.channelId == it.id }?.delete()
+                    }
+                }
+                readyEvent.guilds.find { it.id == guildId }?.let { guild ->
+                    guild.channels.firstOrNull { it.id == categoryId }?.let { topGuildChannel ->
+                        val category = topGuildChannel as Category
+                        category.channels.toList().forEach {
+                            it.delete()
+                        }
+                        category.delete()
+                    }
                 }
             }
-
         }
     }
 
@@ -103,6 +132,11 @@ class AutoVoiceFunnelsBot(internal val funnelsGroups: List<EntryChannelsGroup>) 
         }
     }
 
+    private fun CategoryBehavior.isTransitOrOutputCategory(): Boolean {
+        val toCheck = transitCategories.map { (id) -> id } + tempChannelCategories.map { (id) -> id }
+        return toCheck.any { idCheck -> idCheck == id  }
+    }
+
     private suspend fun tempChannelCleanup(voiceStateUpdateEvent: VoiceStateUpdateEvent) {
         val voiceChannelId = voiceStateUpdateEvent.old?.channelId
         voiceChannelId?.let {
@@ -111,16 +145,17 @@ class AutoVoiceFunnelsBot(internal val funnelsGroups: List<EntryChannelsGroup>) 
             val tempChannel = tempChannels.find { it.id == voiceChannelId }
             tempChannel?.let {
                 if (voiceChannel.voiceStates.toList().isEmpty()) {
-                    voiceChannel.delete()
                     tempChannels.remove(tempChannel)
                 }
             }
             val transitChannel = transitChannels.find { it.id == voiceChannelId }
             transitChannel?.let {
                 if (voiceChannel.voiceStates.toList().isEmpty()) {
-                    voiceChannel.delete()
                     transitChannels.remove(transitChannel)
                 }
+            }
+            if (voiceChannel.category?.isTransitOrOutputCategory() == true && voiceChannel.voiceStates.toList().isEmpty()) {
+                    voiceChannel.delete()
             }
         }
     }
