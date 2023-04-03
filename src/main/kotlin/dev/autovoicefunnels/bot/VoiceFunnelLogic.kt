@@ -295,7 +295,11 @@ internal suspend fun AutoVoiceFunnelsBot.newTempChannelFrakturedName(guild: Guil
     val usedNames = guild.channels.filterIsInstance<VoiceChannel>().filter {
         it.id in tempChannels.map { chan -> chan.id }
     }.map { it.name }.toSet()
-    return frakturedChannelNames.minus(usedNames).random()
+    val availableNames = frakturedChannelNames.minus(usedNames)
+    return when {
+        availableNames.isEmpty() -> frakturedChannelNames.random()
+        else -> availableNames.random()
+    }
 }
 
 internal suspend fun AutoVoiceFunnelsBot.createEntryChannelsAndCategories(event: ReadyEvent) {
