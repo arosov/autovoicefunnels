@@ -14,7 +14,15 @@ val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
 
 private val coroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO + exceptionHandler)
 
-suspend fun main() {
+private val CLEANUP_ACTION = "cleanup"
+
+suspend fun main(args: Array<String>) {
+    var isCleanup = false
+    if (args.isNotEmpty()) {
+        when (args[0]) {
+            CLEANUP_ACTION -> isCleanup = true
+        }
+    }
     while (true) {
         coroutineScope.launch {
             //autoVoiceFunnels {
@@ -47,7 +55,7 @@ suspend fun main() {
             //        }
             //    }
             //}.start()
-            huntFrBotDsl().start()
+            huntFrBotDsl().start(isCleanup)
             //testDsl().start()
         }.join()
         logger.warn { "Delay 10s before try starting again" }

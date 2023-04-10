@@ -49,12 +49,10 @@ class AutoVoiceFunnelsBot(internal val funnelsGroups: List<EntryChannelsGroup>) 
     internal val transitJobs = mutableMapOf<Snowflake, Job>()
 
     // Only use in dev context
-    private val DEV_CLEANUP = false
-    // Safe to use for "uninstall / remove bot" purposes. It'll basically remove everything the bot has created
-    private val CLEARALL_AND_DIE = false
+    private val DEV_CLEANUP = true
     internal lateinit var autoVoiceFunnelsState: SnowflakesState
 
-    suspend fun start() {
+    suspend fun start(isCleanup: Boolean) {
         bot = Kord(DISCORD_TOKEN)
         autoVoiceFunnelsState = readSnowflakesState()
         val savedDslState = readDslState()
@@ -66,10 +64,10 @@ class AutoVoiceFunnelsBot(internal val funnelsGroups: List<EntryChannelsGroup>) 
         bot.on<ReadyEvent> {
             logger.debug { "Ready: DSL changed $hasDslChanged" }
             if (DEV_CLEANUP) cleanupOnStartDevMode(this)
-            if (hasDslChanged || CLEARALL_AND_DIE) {
+            if (hasDslChanged || isCleanup) {
                 cleanPreviouslyCreatedIds(this)
                 autoVoiceFunnelsState.reset()
-                if (CLEARALL_AND_DIE) {
+                if (isCleanup) {
                     autoVoiceFunnelsState.deleteFile()
                     savedDslState.deleteFile()
                     exitProcess(1)
