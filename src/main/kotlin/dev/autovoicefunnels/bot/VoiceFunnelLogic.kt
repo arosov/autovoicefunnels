@@ -9,10 +9,9 @@ import dev.kord.common.entity.*
 import dev.kord.core.behavior.*
 import dev.kord.core.behavior.channel.edit
 import dev.kord.core.entity.Guild
-import dev.kord.core.entity.channel.Category
 import dev.kord.core.entity.channel.TopGuildChannel
 import dev.kord.core.entity.channel.VoiceChannel
-import dev.kord.core.event.gateway.ReadyEvent
+import dev.kord.core.event.guild.GuildCreateEvent
 import dev.kord.core.event.user.VoiceStateUpdateEvent
 import dev.kord.core.exception.EntityNotFoundException
 import kotlinx.coroutines.delay
@@ -92,7 +91,7 @@ internal suspend fun AutoVoiceFunnelsBot.autoMoveFromTransitChannels(voiceStateU
     } catch (e: EntityNotFoundException) {
         -1
     }
-    if ( currentChannelOccupation < funnelOutput.tempChannelGenerator.maxUsers) {
+    if (currentChannelOccupation < funnelOutput.tempChannelGenerator.maxUsers) {
         logger.info { "Transit move timer not started: below maxusers threshold $currentChannelOccupation" }
         return
     }
@@ -302,41 +301,38 @@ internal suspend fun AutoVoiceFunnelsBot.newTempChannelFrakturedName(guild: Guil
     }
 }
 
-internal suspend fun AutoVoiceFunnelsBot.createEntryChannelsAndCategories(event: ReadyEvent) {
-    logger.debug { "Guilds ${event.guildIds}" }
-    event.guilds.forEach { guild ->
-        funnelsGroups.forEach { entryCategory ->
-            logger.debug { "DSL DEBUG $entryCategory" }
-            entryCategory.entryChannelsGroup.forEach { voiceFunnel ->
-                val category = getOrCreateCategory(guild, entryCategory.groupName, voiceFunnel.roles)
-                entryChannels.add(
-                    EntryChannel(
-                        createEntryChannelIfNotExisting(
-                            guild, entryCategory.groupName, voiceFunnel
-                        ), category.id, voiceFunnel.entryChannelName
-                    )
+internal suspend fun AutoVoiceFunnelsBot.createEntryChannelsAndCategories(guild: Guild) {
+    funnelsGroups.forEach { entryCategory ->
+        logger.debug { "DSL DEBUG $entryCategory" }
+        entryCategory.entryChannelsGroup.forEach { voiceFunnel ->
+            val category = getOrCreateCategory(guild, entryCategory.groupName, voiceFunnel.roles)
+            entryChannels.add(
+                EntryChannel(
+                    createEntryChannelIfNotExisting(
+                        guild, entryCategory.groupName, voiceFunnel
+                    ), category.id, voiceFunnel.entryChannelName
                 )
+            )
+        }
+    }
+    funnelsGroups.forEach { entryCategory ->
+        entryCategory.entryChannelsGroup.forEach { voiceFunnel ->
+            voiceFunnel.funnelTransit?.let { funnelTransit ->
+                val transitCategoryKord =
+                    getOrCreateCategory(guild, funnelTransit.transitCategoryName, voiceFunnel.roles)
+                val transitCategory = TransitCategory(transitCategoryKord.id, voiceFunnel.entryChannelName)
+                if (!transitCategories.contains(transitCategory)) transitCategories.add(transitCategory)
             }
         }
-        funnelsGroups.forEach { entryCategory ->
-            entryCategory.entryChannelsGroup.forEach { voiceFunnel ->
-                voiceFunnel.funnelTransit?.let { funnelTransit ->
-                    val transitCategoryKord =
-                        getOrCreateCategory(guild, funnelTransit.transitCategoryName, voiceFunnel.roles)
-                    val transitCategory = TransitCategory(transitCategoryKord.id, voiceFunnel.entryChannelName)
-                    if (!transitCategories.contains(transitCategory)) transitCategories.add(transitCategory)
-                }
-            }
-        }
-        funnelsGroups.forEach { entryCategory ->
-            entryCategory.entryChannelsGroup.forEach { voiceFunnel ->
-                val outputCategoryName = (voiceFunnel.voiceFunnelOutput as SimpleFunnelOutput).categoryName
-                val outputcategoryKord = getOrCreateCategory(guild, outputCategoryName, voiceFunnel.roles)
-                val tempChannelCategory = TempChannelCategory(outputcategoryKord.id, voiceFunnel.entryChannelName)
-                if (!tempChannelCategories.contains(tempChannelCategory)) tempChannelCategories.add(
-                    tempChannelCategory
-                )
-            }
+    }
+    funnelsGroups.forEach { entryCategory ->
+        entryCategory.entryChannelsGroup.forEach { voiceFunnel ->
+            val outputCategoryName = (voiceFunnel.voiceFunnelOutput as SimpleFunnelOutput).categoryName
+            val outputcategoryKord = getOrCreateCategory(guild, outputCategoryName, voiceFunnel.roles)
+            val tempChannelCategory = TempChannelCategory(outputcategoryKord.id, voiceFunnel.entryChannelName)
+            if (!tempChannelCategories.contains(tempChannelCategory)) tempChannelCategories.add(
+                tempChannelCategory
+            )
         }
     }
     autoVoiceFunnelsState.write()

@@ -9,9 +9,12 @@ import dev.kord.common.entity.Snowflake
 import dev.kord.core.Kord
 import dev.kord.core.behavior.GuildBehavior
 import dev.kord.core.behavior.channel.CategoryBehavior
+import dev.kord.core.entity.Guild
 import dev.kord.core.entity.channel.Category
 import dev.kord.core.entity.channel.VoiceChannel
 import dev.kord.core.event.gateway.ReadyEvent
+import dev.kord.core.event.guild.GuildCreateEvent
+import dev.kord.core.event.guild.GuildDeleteEvent
 import dev.kord.core.event.user.VoiceStateUpdateEvent
 import dev.kord.core.on
 import kotlinx.coroutines.CoroutineScope
@@ -49,7 +52,7 @@ class AutoVoiceFunnelsBot(internal val funnelsGroups: List<EntryChannelsGroup>) 
     internal val transitJobs = mutableMapOf<Snowflake, Job>()
 
     // Only use in dev context
-    private val DEV_CLEANUP = true
+    private val DEV_CLEANUP = false
     internal lateinit var autoVoiceFunnelsState: SnowflakesState
 
     suspend fun start(isCleanup: Boolean) {
@@ -65,7 +68,9 @@ class AutoVoiceFunnelsBot(internal val funnelsGroups: List<EntryChannelsGroup>) 
             logger.debug { "Ready: DSL changed $hasDslChanged" }
             if (DEV_CLEANUP) cleanupOnStartDevMode(this)
             if (hasDslChanged || isCleanup) {
-                cleanPreviouslyCreatedIds(this)
+                guilds.forEach {
+                    cleanPreviouslyCreatedIds(it.asGuild())
+                }
                 autoVoiceFunnelsState.reset()
                 if (isCleanup) {
                     autoVoiceFunnelsState.deleteFile()
@@ -73,7 +78,19 @@ class AutoVoiceFunnelsBot(internal val funnelsGroups: List<EntryChannelsGroup>) 
                     exitProcess(1)
                 }
             }
-            createEntryChannelsAndCategories(this)
+            guilds.forEach {
+                // noop for guilds that are already known
+                // initialization for guilds added while bot was down
+                createEntryChannelsAndCategories(it.asGuild())
+            }
+        }
+        bot.on<GuildCreateEvent> {
+            createEntryChannelsAndCategories(this.guild)
+        }
+        bot.on<GuildDeleteEvent> {
+            guild?.let {
+                dropStateForGuild(it)
+            }
         }
         bot.on<VoiceStateUpdateEvent> {
             logger.debug { "VoiceStateUpdateEvent $this" }
@@ -101,22 +118,28 @@ class AutoVoiceFunnelsBot(internal val funnelsGroups: List<EntryChannelsGroup>) 
         bot.login()
     }
 
-    private suspend fun cleanPreviouslyCreatedIds(readyEvent: ReadyEvent) {
-        autoVoiceFunnelsState.guilds.forEach { (guildId, categories) ->
-            categories.forEach {(name, categoryId, channels) ->
-                channels.forEach {channel ->
-                    readyEvent.guilds.find { it.id == guildId }?.let { guild ->
-                        guild.channels.firstOrNull { channel.channelId == it.id }?.delete()
-                    }
+    private suspend fun dropStateForGuild(guild: Guild) {
+        autoVoiceFunnelsState.guilds.find { (guildId,_) -> guild.id == guildId }?.let {
+            autoVoiceFunnelsState.guilds.remove(it)
+        }
+        autoVoiceFunnelsState.write()
+    }
+
+    private suspend fun cleanPreviouslyCreatedIds(guild: Guild) {
+        autoVoiceFunnelsState.guilds.find { it.guildId == guild.id }?.let { (guildId, categories) ->
+            categories.forEach { (name, categoryId, channels) ->
+                // Delete known channels
+                channels.forEach { channel ->
+                    guild.channels.firstOrNull { channel.channelId == it.id }?.delete()
                 }
-                readyEvent.guilds.find { it.id == guildId }?.let { guild ->
-                    guild.channels.firstOrNull { it.id == categoryId }?.let { topGuildChannel ->
-                        val category = topGuildChannel as Category
-                        category.channels.toList().forEach {
-                            it.delete()
-                        }
-                        category.delete()
+                guild.channels.firstOrNull { it.id == categoryId }?.let { topGuildChannel ->
+                    val category = topGuildChannel as Category
+                    // make sure we also delete untracked channels in known categories
+                    category.channels.toList().forEach {
+                        it.delete()
                     }
+                    // delete categories
+                    category.delete()
                 }
             }
         }
@@ -132,7 +155,7 @@ class AutoVoiceFunnelsBot(internal val funnelsGroups: List<EntryChannelsGroup>) 
 
     private fun CategoryBehavior.isTransitOrOutputCategory(): Boolean {
         val toCheck = transitCategories.map { (id) -> id } + tempChannelCategories.map { (id) -> id }
-        return toCheck.any { idCheck -> idCheck == id  }
+        return toCheck.any { idCheck -> idCheck == id }
     }
 
     private suspend fun tempChannelCleanup(voiceStateUpdateEvent: VoiceStateUpdateEvent) {
@@ -152,8 +175,10 @@ class AutoVoiceFunnelsBot(internal val funnelsGroups: List<EntryChannelsGroup>) 
                     transitChannels.remove(transitChannel)
                 }
             }
-            if (voiceChannel.category?.isTransitOrOutputCategory() == true && voiceChannel.voiceStates.toList().isEmpty()) {
-                    voiceChannel.delete()
+            if (voiceChannel.category?.isTransitOrOutputCategory() == true && voiceChannel.voiceStates.toList()
+                    .isEmpty()
+            ) {
+                voiceChannel.delete()
             }
         }
     }
